@@ -24,7 +24,7 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1 
 WORKDIR /app
 
 # Copy only the requirements first to leverage Docker cache
-COPY setup.py README.md LICENSE.md MANIFEST.in ./
+COPY setup.py MANIFEST.in ./
 
 # Install with GPU support
 RUN pip install -e ".[gpu]" && \
