@@ -20,7 +20,7 @@ RUN python3 -m pip install --upgrade pip
 WORKDIR /app
 
 # Install Python dependencies
-RUN pip install numpy onnxruntime onnxruntime-gpu opencv-python-headless fastdeploy gpustat
+RUN pip install numpy onnxruntime onnxruntime-gpu opencv-python-headless fastdeploy gpustat pyyaml
 RUN pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 
 # Copy only the needed files

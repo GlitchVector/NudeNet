@@ -6,8 +6,14 @@ import torch
 import requests
 from io import BytesIO
 from pathlib import Path
-import yaml
-import cv2
+try:
+    import yaml
+except ImportError:
+    yaml = None  # Make yaml optional
+try:
+    import cv2
+except ImportError:
+    cv2 = None  # Make cv2 optional
 
 class YOLOv8ModelLoader:
     """Class to handle YOLOv8 model loading"""
@@ -31,25 +37,75 @@ class YOLOv8ModelLoader:
     
     def load_model(self):
         """Load YOLOv8 model safely"""
+        # Check if the model file exists
+        if not os.path.exists(self.model_path):
+            print(f"Model file not found at {self.model_path}")
+            print("Attempting to download a fresh copy of the model...")
+            try:
+                # For 320n.pt
+                if '320n.pt' in self.model_path:
+                    url = "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.pt"
+                    self.download_model(url)
+                # For 640m.pt
+                elif '640m.pt' in self.model_path:
+                    url = "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.pt"
+                    self.download_model(url)
+                else:
+                    print(f"Don't know which URL to use for {self.model_path}")
+                    return None
+            except Exception as e:
+                print(f"Failed to download model: {e}")
+                return None
+        
+        # Check for corruption in the file
+        file_size = os.path.getsize(self.model_path)
+        if file_size < 1000:  # Very small file is likely corrupted
+            print(f"Model file appears to be corrupted (size: {file_size} bytes)")
+            print("Re-downloading the model...")
+            try:
+                # For 320n.pt
+                if '320n.pt' in self.model_path:
+                    url = "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.pt"
+                    self.download_model(url)
+                # For 640m.pt
+                elif '640m.pt' in self.model_path:
+                    url = "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.pt"
+                    self.download_model(url)
+            except Exception as e:
+                print(f"Failed to re-download model: {e}")
+                return None
+        
         try:
-            # First try the safer weights_only=True (PyTorch 2.6+)
+            # First try to load with standard loading (no special flags)
             model = torch.load(self.model_path, map_location='cpu')
             print("Model loaded successfully with default settings")
             return model
         except Exception as e1:
             print(f"Error loading with default settings: {e1}")
-            print("Trying with weights_only=False (potential security risk)...")
+            print("Trying with weights_only parameter...")
+            
+            # Check if weights_only parameter is supported (PyTorch 2.0+)
+            import inspect
+            torch_load_params = inspect.signature(torch.load).parameters
+            weights_only_supported = 'weights_only' in torch_load_params
             
             try:
-                # Try with weights_only=False, which can pose security risks
-                model = torch.load(self.model_path, map_location='cpu', weights_only=False)
-                print("Model loaded successfully with weights_only=False")
-                return model
+                if weights_only_supported:
+                    # Try with weights_only=False, which can pose security risks in PyTorch 2.6+
+                    model = torch.load(self.model_path, map_location='cpu', weights_only=False)
+                    print("Model loaded successfully with weights_only=False")
+                    return model
+                else:
+                    # Try with pickle_load_args for better error handling
+                    import pickle
+                    model = torch.load(self.model_path, map_location='cpu', pickle_module=pickle)
+                    print("Model loaded successfully with custom pickle module")
+                    return model
             except Exception as e2:
-                print(f"Error loading with weights_only=False: {e2}")
+                print(f"Error loading with alternate methods: {e2}")
                 
-                # Final attempt: manual extraction
-                print("Attempting manual extraction...")
+                # Final attempt: manual extraction or create a new model
+                print("Attempting manual extraction or model creation...")
                 return self._manual_model_extraction()
     
     def _manual_model_extraction(self):

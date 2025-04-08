@@ -19,11 +19,13 @@ REQUIRED = [
     "numpy",
     "onnxruntime",
     "opencv-python-headless",
+    "pyyaml",  # Required for model conversion
 ]
 
 # GPU dependencies
 GPU_EXTRAS = [
     "onnxruntime-gpu",
+    "torch",  # Optional PyTorch support
 ]
 
 # What packages are optional?

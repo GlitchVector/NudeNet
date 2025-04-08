@@ -209,6 +209,9 @@ docker run --gpus all -it nudenet-gpu check-gpu
 # Download all model variants (if not already downloaded)
 docker run --gpus all -it nudenet-gpu download-models
 
+# Force re-download all models (if you encounter corrupted model files)
+docker run --gpus all -it nudenet-gpu download-models force
+
 # Run benchmarks
 docker run --gpus all -it nudenet-gpu benchmark           # Default ONNX 320n benchmark
 docker run --gpus all -it nudenet-gpu benchmark 640       # ONNX 640m benchmark

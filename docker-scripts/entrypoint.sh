@@ -55,7 +55,12 @@ elif [ "$1" = "benchmark" ]; then
     fi
 elif [ "$1" = "download-models" ]; then
     echo "Downloading all model variants..."
-    python3 "${SCRIPT_DIR}/download_models.py"
+    if [ "$2" = "force" ]; then
+        echo "Forcing re-download of all models..."
+        python3 "${SCRIPT_DIR}/download_models.py" --force
+    else
+        python3 "${SCRIPT_DIR}/download_models.py"
+    fi
 elif [ "$1" = "pytorch" ]; then
     # Additional argument is the model name
     if [ -z "$2" ]; then

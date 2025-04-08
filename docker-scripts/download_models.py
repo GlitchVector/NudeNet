@@ -52,7 +52,7 @@ def download_progress(count, block_size, total_size):
     sys.stdout.flush()
 
 # Download models
-def download_models():
+def download_models(force=False):
     create_dirs()
     
     print("=== Downloading NudeNet Models ===")
@@ -71,36 +71,61 @@ def download_models():
             
         target_path = os.path.join(target_dir, model_name)
         
-        # Skip if model already exists
+        # Check if model exists and its size
+        should_download = force
         if os.path.exists(target_path):
-            print(f"{model_name:<15} {model_type:<10} {model['resolution']:<12} {model['size']:<10} {'Already exists':<10}")
-            continue
+            file_size = os.path.getsize(target_path)
+            if file_size < 1000:  # File is too small, likely corrupted
+                print(f"{model_name:<15} {model_type:<10} {model['resolution']:<12} {model['size']:<10} {'Corrupted - re-downloading':<30}")
+                should_download = True
+            elif not force:
+                print(f"{model_name:<15} {model_type:<10} {model['resolution']:<12} {model['size']:<10} {'Already exists':<10}")
+                continue
+        else:
+            should_download = True
             
         # Download model
-        try:
-            print(f"{model_name:<15} {model_type:<10} {model['resolution']:<12} {model['size']:<10} {'Downloading...':<10}")
-            urllib.request.urlretrieve(model["url"], target_path, download_progress)
-            print(f"\n{model_name:<15} {model_type:<10} {model['resolution']:<12} {model['size']:<10} {'✓ Done':<10}")
-            
-            # Create symlink for default model if it's 320n.onnx
-            if model_name == "320n.onnx":
-                nudenet_dir = "/app/nudenet"
-                if os.path.exists(nudenet_dir):
-                    symlink_path = os.path.join(nudenet_dir, "320n.onnx")
-                    # Only create symlink if original exists but symlink doesn't
-                    if os.path.exists(target_path) and not os.path.exists(symlink_path):
-                        print(f"Creating symlink for default model at {symlink_path}")
-                        # If file exists but isn't a symlink, rename it first
-                        if os.path.isfile(symlink_path) and not os.path.islink(symlink_path):
-                            os.rename(symlink_path, f"{symlink_path}.original")
-                            print(f"Renamed existing file to {symlink_path}.original")
-                        # Create relative symlink
-                        os.symlink(os.path.relpath(target_path, nudenet_dir), symlink_path)
-            
-        except Exception as e:
-            print(f"\nError downloading {model_name}: {str(e)}")
+        if should_download:
+            try:
+                print(f"{model_name:<15} {model_type:<10} {model['resolution']:<12} {model['size']:<10} {'Downloading...':<10}")
+                urllib.request.urlretrieve(model["url"], target_path, download_progress)
+                print(f"\n{model_name:<15} {model_type:<10} {model['resolution']:<12} {model['size']:<10} {'✓ Done':<10}")
+                
+                # Verify file size after download
+                if os.path.getsize(target_path) < 1000:
+                    print(f"Warning: Downloaded file {model_name} is suspiciously small. It may be corrupted.")
+                
+                # Create symlink for default model if it's 320n.onnx
+                if model_name == "320n.onnx":
+                    nudenet_dir = "/app/nudenet"
+                    if os.path.exists(nudenet_dir):
+                        symlink_path = os.path.join(nudenet_dir, "320n.onnx")
+                        # Only create symlink if original exists but symlink doesn't
+                        if os.path.exists(target_path) and not os.path.exists(symlink_path):
+                            print(f"Creating symlink for default model at {symlink_path}")
+                            # If file exists but isn't a symlink, rename it first
+                            if os.path.isfile(symlink_path) and not os.path.islink(symlink_path):
+                                os.rename(symlink_path, f"{symlink_path}.original")
+                                print(f"Renamed existing file to {symlink_path}.original")
+                            # Create relative symlink
+                            os.symlink(os.path.relpath(target_path, nudenet_dir), symlink_path)
+                
+            except Exception as e:
+                print(f"\nError downloading {model_name}: {str(e)}")
+                # If download fails, attempt to use a direct GitHub URL as a backup
+                try:
+                    print("Retrying with direct GitHub URL...")
+                    direct_url = f"https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/{model_name}"
+                    urllib.request.urlretrieve(direct_url, target_path, download_progress)
+                    print(f"\n{model_name:<15} {model_type:<10} {model['resolution']:<12} {model['size']:<10} {'✓ Done (backup URL)':<20}")
+                except Exception as e2:
+                    print(f"\nError with backup download: {str(e2)}")
     
     print("\nDownload complete!")
 
 if __name__ == "__main__":
-    download_models()
+    force = False
+    if len(sys.argv) > 1 and sys.argv[1] == "--force":
+        force = True
+        print("Force re-download enabled")
+    download_models(force)
