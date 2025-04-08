@@ -38,8 +38,8 @@ if [ "$1" = "api" ]; then
     echo "Starting API server..."
     exec python3 -m fastdeploy --recipe /app/fastdeploy_recipe --mode rest
 elif [ "$1" = "check-gpu" ]; then
-    echo "Running comprehensive GPU check..."
-    python3 "${SCRIPT_DIR}/gpu_check.py"
+    echo "Running comprehensive GPU check with both ONNX Runtime and PyTorch..."
+    python3 "${SCRIPT_DIR}/check_gpu_combined.py"
 elif [ "$1" = "benchmark" ]; then
     echo "Running GPU benchmark test..."
     if [ "$2" = "pytorch" ]; then
@@ -91,11 +91,15 @@ elif [ "$1" = "test" ]; then
 elif [ "$1" = "debug" ]; then
     echo "Running container diagnostics..."
     bash "${SCRIPT_DIR}/debug.sh"
+elif [ "$1" = "check-cuda" ]; then
+    echo "Checking CUDA with PyTorch..."
+    python3 "${SCRIPT_DIR}/check_cuda.py"
 else
     echo "Usage: docker run [options] nudenet-gpu [command]"
     echo "Commands:"
     echo "  api             - Start API server on port 8080"
-    echo "  check-gpu       - Check if GPU acceleration is available"
+    echo "  check-gpu       - Check if GPU acceleration is available with ONNX Runtime"
+    echo "  check-cuda      - Check CUDA availability with PyTorch"
     echo "  benchmark       - Run performance benchmark"
     echo "  download-models - Force re-download all model models"
     echo "  pytorch [model] - Run with PyTorch model (320n or 640m)"

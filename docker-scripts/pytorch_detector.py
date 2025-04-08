@@ -35,11 +35,22 @@ class PyTorchNudeDetector:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print(f"Using device: {self.device}")
         
-        # Load model
-        if self.device == 'cuda':
-            self.model = torch.load(model_path, map_location=torch.device('cuda'))
-        else:
-            self.model = torch.load(model_path, map_location=torch.device('cpu'))
+        # Load model with weights_only=False for compatibility with PyTorch 2.6+
+        try:
+            # First try with weights_only=False to handle PyTorch 2.6+ security change
+            if self.device == 'cuda':
+                self.model = torch.load(model_path, map_location=torch.device('cuda'), weights_only=False)
+            else:
+                self.model = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
+            print("Model loaded with weights_only=False")
+        except Exception as e:
+            print(f"Error loading model with weights_only=False: {e}")
+            print("Trying legacy loading method...")
+            # Fall back to older PyTorch loading method
+            if self.device == 'cuda':
+                self.model = torch.load(model_path, map_location=torch.device('cuda'))
+            else:
+                self.model = torch.load(model_path, map_location=torch.device('cpu'))
         
         if hasattr(self.model, 'eval'):
             self.model.eval()
