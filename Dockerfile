@@ -7,14 +7,15 @@ LABEL description="GPU-accelerated NudeNet container with CUDA 11.8.0 on Ubuntu 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Add current directory to Python path
-ENV PYTHONPATH=/app:$PYTHONPATH
+ENV PYTHONPATH=/app
 
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3 python3-dev python3-pip \
     gcc g++ make cmake git wget unzip curl \
-    software-properties-common dos2unix && \
+    software-properties-common dos2unix \
+    libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

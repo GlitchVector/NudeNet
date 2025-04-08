@@ -202,9 +202,8 @@ docker run --gpus all -it nudenet-gpu check-gpu
 # Run container diagnostics to troubleshoot issues
 docker run --gpus all -it nudenet-gpu debug
 
-# If you encounter "Module not found" errors or build issues:
-# Use the simplified Dockerfile instead
-docker build -t nudenet-gpu -f simple_dockerfile .
+# Build the GPU container with CUDA 11.8
+docker build -t nudenet-gpu .
 docker run --gpus all -it nudenet-gpu check-gpu
 
 # Download all model variants (if not already downloaded)
