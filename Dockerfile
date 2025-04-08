@@ -6,12 +6,15 @@ LABEL description="GPU-accelerated NudeNet container with CUDA 12.8.1 on Ubuntu 
 # Set noninteractive installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Add current directory to Python path
+ENV PYTHONPATH=/app:$PYTHONPATH
+
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.9 python3.9-dev python3-pip \
     gcc g++ make cmake git wget unzip curl \
-    software-properties-common && \
+    software-properties-common dos2unix && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -23,18 +26,32 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1 
 # Create app directory
 WORKDIR /app
 
-# Copy the application first
+# Copy the application
 COPY . .
 
-# Install with GPU support
-RUN pip install -e . && \
-    pip install -e ".[gpu]" && \
-    pip install fastdeploy && \
-    # Install additional utilities for GPU monitoring and PyTorch
-    pip install gpustat torch torchvision && \
-    # Make sure module is properly installed
-    pip list | grep nudenet && \
-    python -c "import sys; print(sys.path); import nudenet; print('NudeNet module found at:', nudenet.__file__)"
+# Make scripts executable and fix line endings
+RUN chmod +x /app/docker-scripts/*.py /app/docker-scripts/*.sh && \
+    dos2unix /app/docker-scripts/*.sh /app/docker-scripts/*.py
+
+# Install dependencies in separate layers
+RUN pip install numpy opencv-python-headless
+
+# Install ONNX Runtime with GPU support
+RUN pip install onnxruntime onnxruntime-gpu
+
+# Install PyTorch
+RUN pip install torch torchvision
+
+# Install monitoring tools and utilities
+RUN pip install gpustat fastdeploy
+
+# Install package in development mode
+RUN cd /app && pip install -e .
+
+# Create a simple test script to check imports
+RUN echo '#!/usr/bin/python3\ntry:\n  import nudenet\n  print("NudeNet imported successfully")\n  print("Path:", nudenet.__file__)\nexcept Exception as e:\n  print("Error:", e)\n  exit(1)' > /app/test_import.py && \
+    chmod +x /app/test_import.py && \
+    python3 /app/test_import.py
 
 # Set up environment variables for GPU
 ENV NVIDIA_VISIBLE_DEVICES=all
@@ -42,19 +59,5 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # Set logging level to show GPU-related info
 ENV ONNXRUNTIME_LOG_LEVEL=INFO
-
-# Make scripts executable (fix permissions issue)
-RUN chmod +x /app/docker-scripts/*.py /app/docker-scripts/*.sh
-
-# Make sure scripts have correct line endings
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends dos2unix && \
-    dos2unix /app/docker-scripts/*.sh && \
-    dos2unix /app/docker-scripts/*.py && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Fix Python imports - run our import fix script
-RUN python3 /app/docker-scripts/fix_import.py
 
 ENTRYPOINT ["/bin/bash", "/app/docker-scripts/entrypoint.sh"]

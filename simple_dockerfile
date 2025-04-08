@@ -1,0 +1,48 @@
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu20.04
+
+# Set noninteractive installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONPATH=/app:$PYTHONPATH
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3.9 python3.9-dev python3-pip \
+    gcc g++ make cmake git wget unzip curl \
+    software-properties-common dos2unix && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.9 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1 && \
+    update-alternatives --set python3 /usr/bin/python3.9 && \
+    python3 -m pip install --upgrade pip
+
+# Create app directory
+WORKDIR /app
+
+# Install Python dependencies
+RUN pip install numpy onnxruntime onnxruntime-gpu opencv-python-headless fastdeploy gpustat torch torchvision
+
+# Copy only the needed files
+COPY nudenet ./nudenet
+COPY setup.py LICENSE.md MANIFEST.in README.md ./
+
+# Install package directly (not in development mode)
+RUN pip install .
+
+# Simple test script
+RUN echo "import nudenet; print('NudeNet found at:', nudenet.__file__)" > test.py && \
+    python3 test.py
+
+# Copy script files
+COPY docker-scripts ./docker-scripts
+COPY fastdeploy_recipe ./fastdeploy_recipe
+RUN chmod +x ./docker-scripts/*.py ./docker-scripts/*.sh
+
+# Set up GPU environment 
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Support for the standard entrypoint
+ENTRYPOINT ["/bin/bash", "/app/docker-scripts/entrypoint.sh"]
