@@ -163,6 +163,10 @@ class NudeDetector:
             'CPUExecutionProvider'
         ]
         
+        # For Docker containers with explicit CUDA versions
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use the first GPU
+        onnxruntime.set_default_logger_severity(0)  # Set to verbose logging
+        
         try:
             # Try to use GPU providers by default
             if providers is None:

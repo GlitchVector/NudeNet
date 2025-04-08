@@ -41,7 +41,7 @@ RUN pip install onnxruntime onnxruntime-gpu
 RUN pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 
 # Install monitoring tools and utilities
-RUN pip install gpustat fastdeploy pyyaml
+RUN pip install gpustat fastdeploy pyyaml ultralytics
 
 # Install package in development mode
 RUN cd /app && pip install -e .

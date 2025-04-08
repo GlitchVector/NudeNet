@@ -35,6 +35,9 @@ class PyTorchNudeDetector:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print(f"Using device: {self.device}")
         
+        # Add process_ultralytics_output method to process results from ultralytics YOLO
+        self.process_ultralytics_output = self.process_yolo_output
+        
         # Load model with weights_only=False for compatibility with PyTorch 2.6+
         # Check if torch.load supports the weights_only parameter (PyTorch 2.0+)
         weights_only_param_supported = False
@@ -150,6 +153,26 @@ class PyTorchNudeDetector:
             # Model inference
             if hasattr(self.model, 'forward'):
                 outputs = self.model(input_tensor)
+            elif isinstance(self.model, dict) and 'model' in self.model:
+                # Handle YOLOv8 model format which has the model inside a dict
+                if self.model['model'] is not None and hasattr(self.model['model'], 'forward'):
+                    outputs = self.model['model'](input_tensor)
+                else:
+                    # Using pytorch_yolo to run inference
+                    try:
+                        # Try to import the ultralytics package if available
+                        from ultralytics import YOLO
+                        # Create a YOLO model from the loaded weights
+                        temp_path = '/tmp/temp_model.pt'
+                        torch.save(self.model, temp_path)
+                        yolo_model = YOLO(temp_path)
+                        # Run inference
+                        result = yolo_model(input_tensor)
+                        outputs = result[0].boxes.data
+                        return self.process_ultralytics_output(outputs, image_original_width, image_original_height)
+                    except ImportError:
+                        print("Failed to import ultralytics. Cannot run YOLOv8 model.")
+                        return []
             else:
                 print("Model doesn't have a standard forward method. This might not be a standard PyTorch model.")
                 return []

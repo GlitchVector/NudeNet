@@ -26,6 +26,7 @@ REQUIRED = [
 GPU_EXTRAS = [
     "onnxruntime-gpu",
     "torch",  # Optional PyTorch support
+    "ultralytics",  # For YOLOv8 model support
 ]
 
 # What packages are optional?
