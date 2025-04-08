@@ -142,9 +142,10 @@ If you encounter GPU-related issues, try these solutions:
    print("CUDA available:", torch.cuda.is_available())
    ```
 
-2. **PyTorch 2.6+ Model Loading Issues**:
+2. **PyTorch Model Loading Issues**:
    - PyTorch 2.6+ introduced new security restrictions for model loading
-   - If using Docker, run `docker run --gpus all -it nudenet-gpu fix-models` to fix models
+   - Our container uses PyTorch 2.0.1 with CUDA 11.8, which avoids these restrictions
+   - If you encounter model loading issues, you can still run `docker run --gpus all -it nudenet-gpu fix-models`
    - Use the direct ONNX runner as an alternative: `docker run --gpus all -it nudenet-gpu onnx 320n`
 
 3. **ONNX Runtime vs PyTorch**:
@@ -183,7 +184,7 @@ If you encounter GPU-related issues, try these solutions:
 docker run -it -p8080:8080 ghcr.io/notai-tech/nudenet:latest
 ```
 
-#### GPU Version (CUDA 12.8.1 on Ubuntu 20.04)
+#### GPU Version (CUDA 11.8.0 on Ubuntu 22.04)
 Build the GPU-enabled container:
 ```bash
 docker build -t nudenet-gpu .

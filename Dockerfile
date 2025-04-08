@@ -1,7 +1,7 @@
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu20.04
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 LABEL maintainer="NudeNet Maintainers"
-LABEL description="GPU-accelerated NudeNet container with CUDA 12.8.1 on Ubuntu 20.04"
+LABEL description="GPU-accelerated NudeNet container with CUDA 11.8.0 on Ubuntu 22.04"
 
 # Set noninteractive installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -12,16 +12,14 @@ ENV PYTHONPATH=/app:$PYTHONPATH
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    python3.9 python3.9-dev python3-pip \
+    python3 python3-dev python3-pip \
     gcc g++ make cmake git wget unzip curl \
     software-properties-common dos2unix && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Set Python 3.9 as default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1 && \
-    update-alternatives --set python3 /usr/bin/python3.9 && \
-    python3 -m pip install --upgrade pip setuptools wheel
+# Upgrade pip and install essential packages
+RUN python3 -m pip install --upgrade pip setuptools wheel
 
 # Create app directory
 WORKDIR /app
@@ -39,8 +37,8 @@ RUN pip install numpy opencv-python-headless
 # Install ONNX Runtime with GPU support
 RUN pip install onnxruntime onnxruntime-gpu
 
-# Install PyTorch
-RUN pip install torch torchvision
+# Install PyTorch with CUDA 11.8 compatibility
+RUN pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 
 # Install monitoring tools and utilities
 RUN pip install gpustat fastdeploy
