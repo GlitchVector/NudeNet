@@ -3,6 +3,10 @@
 # This script performs a diagnostic check of the container environment
 # Useful for debugging container startup issues
 
+# Run import fix script first to try and repair any issues
+python3 /app/docker-scripts/fix_import.py
+
+# Main diagnostic checks
 echo "===== CONTAINER ENVIRONMENT DIAGNOSTIC ====="
 echo
 
@@ -29,7 +33,26 @@ echo
 
 echo "=== Python Environment ==="
 python3 --version
-pip list | grep -E "onnxruntime|torch|numpy|opencv"
+pip list | grep -E "onnxruntime|torch|numpy|opencv|nudenet"
+echo
+
+echo "=== Python Path ==="
+python3 -c "import sys; print('\n'.join(sys.path))"
+echo
+
+echo "=== NudeNet Import Test ==="
+python3 -c "
+try:
+    import nudenet
+    print(f'SUCCESS: NudeNet imported from {nudenet.__file__}')
+    from nudenet import NudeDetector
+    print('SUCCESS: NudeDetector imported')
+    detector = NudeDetector()
+    print('SUCCESS: NudeDetector initialized')
+    print(f'ONNX Providers: {detector.onnx_session.get_providers()}')
+except Exception as e:
+    print(f'ERROR: {type(e).__name__}: {str(e)}')
+"
 echo
 
 echo "=== Model Directory Structure ==="

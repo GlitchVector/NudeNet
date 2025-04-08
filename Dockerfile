@@ -23,19 +23,18 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1 
 # Create app directory
 WORKDIR /app
 
-# Copy only the requirements first to leverage Docker cache
-COPY setup.py MANIFEST.in ./
+# Copy the application first
+COPY . .
 
 # Install with GPU support
-RUN pip install -e ".[gpu]" && \
+RUN pip install -e . && \
+    pip install -e ".[gpu]" && \
     pip install fastdeploy && \
     # Install additional utilities for GPU monitoring and PyTorch
-    pip install gpustat torch torchvision
-
-# Copy the rest of the application
-COPY nudenet ./nudenet
-COPY fastdeploy_recipe ./fastdeploy_recipe
-COPY docker-scripts ./docker-scripts
+    pip install gpustat torch torchvision && \
+    # Make sure module is properly installed
+    pip list | grep nudenet && \
+    python -c "import sys; print(sys.path); import nudenet; print('NudeNet module found at:', nudenet.__file__)"
 
 # Set up environment variables for GPU
 ENV NVIDIA_VISIBLE_DEVICES=all
@@ -54,5 +53,8 @@ RUN apt-get update && \
     dos2unix /app/docker-scripts/*.py && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Fix Python imports - run our import fix script
+RUN python3 /app/docker-scripts/fix_import.py
 
 ENTRYPOINT ["/bin/bash", "/app/docker-scripts/entrypoint.sh"]

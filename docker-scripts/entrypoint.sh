@@ -7,6 +7,30 @@ APP_DIR="/app"
 echo "Starting NudeNet GPU container..."
 echo "Script directory: ${SCRIPT_DIR}"
 
+# Add current directory to PYTHONPATH
+export PYTHONPATH=$PYTHONPATH:$APP_DIR
+
+# Verify Python can find the nudenet module
+echo "Checking NudeNet module availability..."
+if python3 -c "import nudenet; print('✅ NudeNet module found at:', nudenet.__file__)" 2>/dev/null; then
+    echo "Module check passed"
+else
+    echo "❌ ERROR: Cannot import nudenet module"
+    echo "Running diagnostics..."
+    echo "Python path:"
+    python3 -c "import sys; print(sys.path)"
+    echo "Looking for nudenet package files:"
+    find $APP_DIR -name "__init__.py" | grep nudenet
+    echo "Installation status:"
+    pip list | grep nudenet
+    echo "Package content:"
+    ls -la $APP_DIR/nudenet
+    
+    # Try to fix the import issue
+    echo "Attempting to fix import issue..."
+    python3 "${SCRIPT_DIR}/fix_import.py"
+fi
+
 # Call the model download script
 bash "${SCRIPT_DIR}/ensure_models.sh"
 

@@ -152,6 +152,10 @@ docker run --gpus all -it nudenet-gpu check-gpu
 # Run container diagnostics to troubleshoot issues
 docker run --gpus all -it nudenet-gpu debug
 
+# If you encounter "Module not found" errors:
+# This runs the import fix utility directly
+docker run --gpus all -it nudenet-gpu python3 /app/docker-scripts/fix_import.py
+
 # Download all model variants (if not already downloaded)
 docker run --gpus all -it nudenet-gpu download-models
 
