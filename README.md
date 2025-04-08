@@ -128,6 +128,54 @@ detector = NudeDetector(providers=[
 detector = NudeDetector(providers=['CPUExecutionProvider'])
 ```
 
+#### Troubleshooting GPU Issues
+
+If you encounter GPU-related issues, try these solutions:
+
+1. **Check GPU Availability**:
+   ```python
+   import onnxruntime
+   print("Available providers:", onnxruntime.get_available_providers())
+   
+   # For PyTorch
+   import torch
+   print("CUDA available:", torch.cuda.is_available())
+   ```
+
+2. **PyTorch 2.6+ Model Loading Issues**:
+   - PyTorch 2.6+ introduced new security restrictions for model loading
+   - If using Docker, run `docker run --gpus all -it nudenet-gpu fix-models` to fix models
+   - Use the direct ONNX runner as an alternative: `docker run --gpus all -it nudenet-gpu onnx 320n`
+
+3. **ONNX Runtime vs PyTorch**:
+   - NudeNet supports both ONNX Runtime and PyTorch for GPU acceleration
+   - ONNX Runtime is used by default in the Python package
+   - The Docker container supports both backends with comprehensive diagnostics
+   - When one backend has issues, try the other:
+     ```bash
+     # Test ONNX Runtime GPU support
+     docker run --gpus all -it nudenet-gpu check-gpu
+     
+     # Try PyTorch if ONNX Runtime has issues
+     docker run --gpus all -it nudenet-gpu pytorch 320n
+     
+     # Try direct ONNX runner if PyTorch has issues
+     docker run --gpus all -it nudenet-gpu onnx 320n
+     ```
+
+4. **GPU Memory Issues**:
+   - If you're encountering CUDA out of memory errors:
+   ```python
+   # Reduce GPU memory usage
+   detector = NudeDetector(providers=[
+       ('CUDAExecutionProvider', {
+           'device_id': 0,
+           'gpu_mem_limit': 1 * 1024 * 1024 * 1024,  # Limit to 1GB
+       }),
+       'CPUExecutionProvider'
+   ])
+   ```
+
 ### Docker
 
 #### CPU Version
@@ -173,6 +221,13 @@ docker run --gpus all -it nudenet-gpu test /path/to/image.jpg # Test with custom
 # Run with PyTorch models
 docker run --gpus all -it nudenet-gpu pytorch 320n        # Run 320n PyTorch model
 docker run --gpus all -it nudenet-gpu pytorch 640m        # Run 640m PyTorch model
+
+# Run with direct ONNX runner (useful if PyTorch has issues)
+docker run --gpus all -it nudenet-gpu onnx 320n           # Run 320n ONNX model directly
+docker run --gpus all -it nudenet-gpu onnx 640m           # Run 640m ONNX model directly
+
+# Fix PyTorch models for compatibility with PyTorch 2.6+
+docker run --gpus all -it nudenet-gpu fix-models
 
 # Start API server
 docker run --gpus all -p8080:8080 -it nudenet-gpu api

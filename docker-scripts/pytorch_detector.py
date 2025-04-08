@@ -36,21 +36,52 @@ class PyTorchNudeDetector:
         print(f"Using device: {self.device}")
         
         # Load model with weights_only=False for compatibility with PyTorch 2.6+
+        # Check if torch.load supports the weights_only parameter (PyTorch 2.0+)
+        weights_only_param_supported = False
+        import inspect
+        torch_load_params = inspect.signature(torch.load).parameters
+        if 'weights_only' in torch_load_params:
+            weights_only_param_supported = True
+            print("PyTorch supports weights_only parameter")
+        else:
+            print("Using older PyTorch version without weights_only parameter")
+
         try:
-            # First try with weights_only=False to handle PyTorch 2.6+ security change
-            if self.device == 'cuda':
-                self.model = torch.load(model_path, map_location=torch.device('cuda'), weights_only=False)
+            # First approach: try with modern PyTorch if supported
+            if weights_only_param_supported:
+                if self.device == 'cuda':
+                    self.model = torch.load(model_path, map_location=torch.device('cuda'), weights_only=False)
+                else:
+                    self.model = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
+                print("Model loaded with weights_only=False")
             else:
-                self.model = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
-            print("Model loaded with weights_only=False")
+                # For older PyTorch versions (< 2.0)
+                if self.device == 'cuda':
+                    self.model = torch.load(model_path, map_location=torch.device('cuda'))
+                else:
+                    self.model = torch.load(model_path, map_location=torch.device('cpu'))
+                print("Model loaded with legacy method (older PyTorch)")
         except Exception as e:
-            print(f"Error loading model with weights_only=False: {e}")
-            print("Trying legacy loading method...")
-            # Fall back to older PyTorch loading method
-            if self.device == 'cuda':
-                self.model = torch.load(model_path, map_location=torch.device('cuda'))
-            else:
-                self.model = torch.load(model_path, map_location=torch.device('cpu'))
+            print(f"Error loading model with first approach: {e}")
+            print("Trying alternative loading method...")
+            try:
+                # Fall back to try without weights_only
+                if self.device == 'cuda':
+                    self.model = torch.load(model_path, map_location=torch.device('cuda'))
+                else:
+                    self.model = torch.load(model_path, map_location=torch.device('cpu'))
+                print("Model loaded with fallback method")
+            except Exception as e2:
+                print(f"Error loading model with fallback method: {e2}")
+                print("\n---------------------------------------")
+                print("MODEL LOADING FAILED: If you're using PyTorch 2.6+, this could be due to")
+                print("security restrictions. Try fixing the models with:")
+                print("  docker run --gpus all -it nudenet-gpu fix-models")
+                print("")
+                print("If that doesn't work, try using the direct ONNX runner instead:")
+                print("  docker run --gpus all -it nudenet-gpu onnx 320n")
+                print("---------------------------------------\n")
+                raise
         
         if hasattr(self.model, 'eval'):
             self.model.eval()

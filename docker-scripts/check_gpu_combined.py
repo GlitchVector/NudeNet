@@ -247,7 +247,19 @@ def main():
         print("CUDA appears to be working with PyTorch but not with ONNX Runtime.")
         print("Consider using the PyTorch implementation for GPU acceleration:")
         print("  docker run --gpus all -it nudenet-gpu pytorch 320n")
-    
+    elif onnx_gpu_ok and not pytorch_gpu_ok:
+        print(f"\n{Colors.YELLOW}RECOMMENDATION:{Colors.ENDC}")
+        print("CUDA appears to be working with ONNX Runtime but not with PyTorch.")
+        print("If you're experiencing issues with PyTorch model loading, try:")
+        print("  docker run --gpus all -it nudenet-gpu fix-models")
+        print("  docker run --gpus all -it nudenet-gpu onnx 320n")
+    elif not pytorch_gpu_ok and not onnx_gpu_ok:
+        print(f"\n{Colors.YELLOW}RECOMMENDATION:{Colors.ENDC}")
+        print("Neither PyTorch nor ONNX Runtime detected GPU acceleration.")
+        print("Try fixing your models and using the direct ONNX runner:")
+        print("  docker run --gpus all -it nudenet-gpu fix-models")
+        print("  docker run --gpus all -it nudenet-gpu onnx 320n")
+        
     return 0 if (pytorch_gpu_ok or onnx_gpu_ok) else 1
 
 if __name__ == "__main__":

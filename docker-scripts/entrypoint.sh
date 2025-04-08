@@ -94,12 +94,44 @@ elif [ "$1" = "debug" ]; then
 elif [ "$1" = "check-cuda" ]; then
     echo "Checking CUDA with PyTorch..."
     python3 "${SCRIPT_DIR}/check_cuda.py"
+elif [ "$1" = "fix-models" ]; then
+    echo "Attempting to fix PyTorch models for compatibility..."
+    python3 "${SCRIPT_DIR}/yolov8_converter.py" --input "/app/models/pytorch/320n.pt"
+    echo ""
+    python3 "${SCRIPT_DIR}/yolov8_converter.py" --input "/app/models/pytorch/640m.pt"
+elif [ "$1" = "onnx" ]; then
+    # Additional argument is the model name
+    if [ -z "$2" ]; then
+        echo "Error: Please specify a model variant (320n or 640m)"
+        exit 1
+    fi
+    
+    MODEL_PATH="/app/models/onnx/$2.onnx"
+    if [ ! -f "$MODEL_PATH" ]; then
+        echo "Error: Model not found at $MODEL_PATH"
+        echo "Available models:"
+        ls -la /app/models/onnx/
+        exit 1
+    fi
+    
+    # Optional image path
+    IMAGE_PATH="${3:-/app/fastdeploy_recipe/cory_chase.jpeg}"
+    SIZE=320
+    if [ "$2" = "640m" ]; then
+        SIZE=640
+    fi
+    
+    # Run ONNX runner
+    echo "Running direct ONNX inference with model: $MODEL_PATH"
+    python3 "${SCRIPT_DIR}/onnx_runner.py" --model "$MODEL_PATH" --image "$IMAGE_PATH" --size $SIZE
 else
     echo "Usage: docker run [options] nudenet-gpu [command]"
     echo "Commands:"
     echo "  api             - Start API server on port 8080"
-    echo "  check-gpu       - Check if GPU acceleration is available with ONNX Runtime"
+    echo "  check-gpu       - Check if GPU acceleration is available with ONNX Runtime and PyTorch"
     echo "  check-cuda      - Check CUDA availability with PyTorch"
+    echo "  fix-models      - Fix PyTorch models for compatibility with PyTorch 2.6+"
+    echo "  onnx [model]    - Run direct ONNX inference (320n or 640m)"
     echo "  benchmark       - Run performance benchmark"
     echo "  download-models - Force re-download all model models"
     echo "  pytorch [model] - Run with PyTorch model (320n or 640m)"
