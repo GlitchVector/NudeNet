@@ -44,4 +44,15 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 # Set logging level to show GPU-related info
 ENV ONNXRUNTIME_LOG_LEVEL=INFO
 
-ENTRYPOINT ["/app/docker-scripts/entrypoint.sh"]
+# Make scripts executable (fix permissions issue)
+RUN chmod +x /app/docker-scripts/*.py /app/docker-scripts/*.sh
+
+# Make sure scripts have correct line endings
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends dos2unix && \
+    dos2unix /app/docker-scripts/*.sh && \
+    dos2unix /app/docker-scripts/*.py && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT ["/bin/bash", "/app/docker-scripts/entrypoint.sh"]

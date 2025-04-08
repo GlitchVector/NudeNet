@@ -1,33 +1,37 @@
 #!/bin/bash
 
-# Download models if needed
-if [ ! -d "/app/models" ] || [ -z "$(ls -A /app/models/onnx 2>/dev/null)" ]; then
-    echo "First run detected: Downloading all model variants..."
-    python3 /app/docker-scripts/download_models.py
-fi
+# Ensure we have working file paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="/app"
+
+echo "Starting NudeNet GPU container..."
+echo "Script directory: ${SCRIPT_DIR}"
+
+# Call the model download script
+bash "${SCRIPT_DIR}/ensure_models.sh"
 
 if [ "$1" = "api" ]; then
     echo "Starting API server..."
     exec python3 -m fastdeploy --recipe /app/fastdeploy_recipe --mode rest
 elif [ "$1" = "check-gpu" ]; then
     echo "Running comprehensive GPU check..."
-    python3 /app/docker-scripts/gpu_check.py
+    python3 "${SCRIPT_DIR}/gpu_check.py"
 elif [ "$1" = "benchmark" ]; then
     echo "Running GPU benchmark test..."
     if [ "$2" = "pytorch" ]; then
-        python3 /app/docker-scripts/benchmark.py --pytorch-only
+        python3 "${SCRIPT_DIR}/benchmark.py" --pytorch-only
     elif [ "$2" = "onnx" ]; then
-        python3 /app/docker-scripts/benchmark.py --onnx-only
+        python3 "${SCRIPT_DIR}/benchmark.py" --onnx-only
     elif [ "$2" = "640" ] || [ "$2" = "640m" ]; then
-        python3 /app/docker-scripts/benchmark.py --model-640
+        python3 "${SCRIPT_DIR}/benchmark.py" --model-640
     elif [ "$2" = "compare" ]; then
-        python3 /app/docker-scripts/benchmark.py --pytorch
+        python3 "${SCRIPT_DIR}/benchmark.py" --pytorch
     else
-        python3 /app/docker-scripts/benchmark.py
+        python3 "${SCRIPT_DIR}/benchmark.py"
     fi
 elif [ "$1" = "download-models" ]; then
     echo "Downloading all model variants..."
-    python3 /app/docker-scripts/download_models.py
+    python3 "${SCRIPT_DIR}/download_models.py"
 elif [ "$1" = "pytorch" ]; then
     # Additional argument is the model name
     if [ -z "$2" ]; then
@@ -52,23 +56,27 @@ elif [ "$1" = "pytorch" ]; then
     
     # Run PyTorch detector
     echo "Running PyTorch detector with model: $MODEL_PATH"
-    python3 /app/docker-scripts/pytorch_detector.py --model "$MODEL_PATH" --image "$IMAGE_PATH" --resolution $RESOLUTION
+    python3 "${SCRIPT_DIR}/pytorch_detector.py" --model "$MODEL_PATH" --image "$IMAGE_PATH" --resolution $RESOLUTION
 elif [ "$1" = "test" ]; then
     echo "Running model tests..."
     if [ -n "$2" ]; then
-        python3 /app/docker-scripts/test_models.py "$2"
+        python3 "${SCRIPT_DIR}/test_models.py" "$2"
     else
-        python3 /app/docker-scripts/test_models.py
+        python3 "${SCRIPT_DIR}/test_models.py"
     fi
+elif [ "$1" = "debug" ]; then
+    echo "Running container diagnostics..."
+    bash "${SCRIPT_DIR}/debug.sh"
 else
     echo "Usage: docker run [options] nudenet-gpu [command]"
     echo "Commands:"
     echo "  api             - Start API server on port 8080"
     echo "  check-gpu       - Check if GPU acceleration is available"
     echo "  benchmark       - Run performance benchmark"
-    echo "  download-models - Force re-download all model variants"
+    echo "  download-models - Force re-download all model models"
     echo "  pytorch [model] - Run with PyTorch model (320n or 640m)"
     echo "  test [image]    - Run test on both ONNX and PyTorch models"
+    echo "  debug           - Run diagnostic checks on the container"
     echo "  bash            - Start a bash shell"
     if [ -z "$1" ]; then
         # Default command

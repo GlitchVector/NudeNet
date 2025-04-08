@@ -149,6 +149,9 @@ docker run --gpus all -it nudenet-gpu
 # Check GPU availability with detailed diagnostics
 docker run --gpus all -it nudenet-gpu check-gpu
 
+# Run container diagnostics to troubleshoot issues
+docker run --gpus all -it nudenet-gpu debug
+
 # Download all model variants (if not already downloaded)
 docker run --gpus all -it nudenet-gpu download-models
 
