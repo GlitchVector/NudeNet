@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Docker
+Dockerfile.dev
+.dockerignore
+
+# Development
+.vscode/
+.idea/
+.venv/
+venv/
+*.swp
+*.swo
+
+# Documentation and larger files
+docs/
+README*.md
+CHANGELOG*.md
+
+# Tests
+tests/
+
+# Unnecessary large files
+*.tar.gz
+*.zip
+*.tgz
+*.log
+*.db
+*.sqlite
+
+# Allow required files
+!docker-scripts/
+!fastdeploy_recipe/
+!nudenet/

@@ -28,4 +28,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Dependencies
 - Python: numpy, onnxruntime, opencv-python-headless
+- Python GPU: onnxruntime-gpu
 - JS: React, onnxruntime-web, opencv-js
+
+## Docker Usage
+- Build GPU image: `docker build -t nudenet-gpu .`
+- Run GPU container: `docker run --gpus all -it nudenet-gpu`
+- Start API: `docker run --gpus all -p8080:8080 -it nudenet-gpu api`

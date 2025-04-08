@@ -130,10 +130,50 @@ detector = NudeDetector(providers=['CPUExecutionProvider'])
 
 ### Docker
 
+#### CPU Version
 ```bash
 docker run -it -p8080:8080 ghcr.io/notai-tech/nudenet:latest
 ```
 
+#### GPU Version (CUDA 12.8.1 on Ubuntu 20.04)
+Build the GPU-enabled container:
+```bash
+docker build -t nudenet-gpu .
+```
+
+Run with NVIDIA Container Toolkit:
+```bash
+# First run will automatically download all models (ONNX and PyTorch)
+docker run --gpus all -it nudenet-gpu
+
+# Check GPU availability with detailed diagnostics
+docker run --gpus all -it nudenet-gpu check-gpu
+
+# Download all model variants (if not already downloaded)
+docker run --gpus all -it nudenet-gpu download-models
+
+# Run benchmarks
+docker run --gpus all -it nudenet-gpu benchmark           # Default ONNX 320n benchmark
+docker run --gpus all -it nudenet-gpu benchmark 640       # ONNX 640m benchmark
+docker run --gpus all -it nudenet-gpu benchmark pytorch   # PyTorch benchmark
+docker run --gpus all -it nudenet-gpu benchmark compare   # Compare ONNX vs PyTorch
+
+# Run tests
+docker run --gpus all -it nudenet-gpu test                # Test both ONNX and PyTorch models
+docker run --gpus all -it nudenet-gpu test /path/to/image.jpg # Test with custom image
+
+# Run with PyTorch models
+docker run --gpus all -it nudenet-gpu pytorch 320n        # Run 320n PyTorch model
+docker run --gpus all -it nudenet-gpu pytorch 640m        # Run 640m PyTorch model
+
+# Start API server
+docker run --gpus all -p8080:8080 -it nudenet-gpu api
+
+# Run bash shell
+docker run --gpus all -it nudenet-gpu bash
+```
+
+Example API request:
 ```bash
 curl -F f1=@"images.jpeg" "http://localhost:8080/infer"
 
