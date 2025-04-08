@@ -31,8 +31,13 @@ else
     python3 "${SCRIPT_DIR}/fix_import.py"
 fi
 
-# Call the model download script
-bash "${SCRIPT_DIR}/ensure_models.sh"
+# Check if models exist, but don't re-download (they should be in the image)
+if [ ! -f "/app/models/onnx/320n.onnx" ] || [ ! -f "/app/models/pytorch/320n.pt" ]; then
+    echo "WARNING: Pre-downloaded models not found in image, downloading now..."
+    bash "${SCRIPT_DIR}/ensure_models.sh"
+else
+    echo "Using pre-installed models from image"
+fi
 
 if [ "$1" = "api" ]; then
     echo "Starting API server..."

@@ -51,6 +51,20 @@ RUN echo '#!/usr/bin/python3\ntry:\n  import nudenet\n  print("NudeNet imported 
     chmod +x /app/test_import.py && \
     python3 /app/test_import.py
 
+# Create model directories
+RUN mkdir -p /app/models/onnx /app/models/pytorch
+
+# Download models during build
+RUN python3 /app/docker-scripts/download_models.py --force && \
+    # Verify the models were downloaded correctly
+    ls -la /app/models/onnx/320n.onnx /app/models/pytorch/320n.pt && \
+    echo "Models downloaded successfully"
+
+# Fix PyTorch models during build
+RUN cd /app && python3 /app/docker-scripts/yolov8_converter.py --input "/app/models/pytorch/320n.pt" && \
+    python3 /app/docker-scripts/yolov8_converter.py --input "/app/models/pytorch/640m.pt" && \
+    echo "PyTorch models fixed successfully"
+
 # Set up environment variables for GPU
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
