@@ -32,7 +32,7 @@ RUN chmod +x /app/docker-scripts/*.py /app/docker-scripts/*.sh && \
     dos2unix /app/docker-scripts/*.sh /app/docker-scripts/*.py
 
 # Install dependencies in separate layers
-RUN pip install numpy opencv-python-headless
+RUN pip install "numpy<2.0.0" opencv-python-headless
 
 # Install ONNX Runtime with GPU support
 RUN pip install onnxruntime onnxruntime-gpu

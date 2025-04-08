@@ -16,7 +16,7 @@ VERSION = "3.4.2"
 
 # What packages are required for this module to be executed?
 REQUIRED = [
-    "numpy",
+    "numpy<2.0.0",  # Use NumPy 1.x for compatibility
     "onnxruntime",
     "opencv-python-headless",
     "pyyaml",  # Required for model conversion

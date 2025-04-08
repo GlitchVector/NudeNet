@@ -142,11 +142,12 @@ If you encounter GPU-related issues, try these solutions:
    print("CUDA available:", torch.cuda.is_available())
    ```
 
-2. **PyTorch Model Loading Issues**:
-   - PyTorch 2.6+ introduced new security restrictions for model loading
-   - Our container uses PyTorch 2.0.1 with CUDA 11.8, which avoids these restrictions
-   - If you encounter model loading issues, you can still run `docker run --gpus all -it nudenet-gpu fix-models`
-   - Use the direct ONNX runner as an alternative: `docker run --gpus all -it nudenet-gpu onnx 320n`
+2. **PyTorch and NumPy Compatibility Issues**:
+   - Our container uses PyTorch 2.0.1 with CUDA 11.8 and NumPy 1.x
+   - This combination avoids both the PyTorch 2.6+ security restrictions and NumPy 2.0 compatibility issues
+   - If you encounter model loading issues, run `docker run --gpus all -it nudenet-gpu fix-models`
+   - If you see NumPy-related errors, try the direct ONNX runner: `docker run --gpus all -it nudenet-gpu onnx 320n`
+   - You can force re-download of all models with: `docker run --gpus all -it nudenet-gpu download-models force`
 
 3. **ONNX Runtime vs PyTorch**:
    - NudeNet supports both ONNX Runtime and PyTorch for GPU acceleration

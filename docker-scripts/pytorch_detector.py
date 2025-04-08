@@ -115,7 +115,21 @@ class PyTorchNudeDetector:
         
         # Resize and normalize
         resized = cv2.resize(image_rgb, (self.input_width, self.input_height))
-        input_tensor = torch.from_numpy(resized.transpose(2, 0, 1)).float() / 255.0
+        
+        # Handle NumPy compatibility issues
+        try:
+            input_tensor = torch.from_numpy(resized.transpose(2, 0, 1)).float() / 255.0
+        except RuntimeError as e:
+            print(f"NumPy conversion error: {e}")
+            print("Using manual tensor creation as fallback...")
+            # Manual tensor creation without NumPy dependency
+            resized_float = resized.astype(float) / 255.0
+            # Create tensors directly
+            r = torch.tensor(resized_float[:, :, 0])
+            g = torch.tensor(resized_float[:, :, 1])
+            b = torch.tensor(resized_float[:, :, 2])
+            # Stack channels
+            input_tensor = torch.stack([r, g, b])
         
         # Add batch dimension
         input_tensor = input_tensor.unsqueeze(0)
