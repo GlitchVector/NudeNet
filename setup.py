@@ -21,9 +21,14 @@ REQUIRED = [
     "opencv-python-headless",
 ]
 
+# GPU dependencies
+GPU_EXTRAS = [
+    "onnxruntime-gpu",
+]
+
 # What packages are optional?
 EXTRAS = {
-    # 'fancy feature': ['django'],
+    'gpu': GPU_EXTRAS,
 }
 
 # The rest you shouldn't have to touch too much :)

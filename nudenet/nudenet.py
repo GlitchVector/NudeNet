@@ -4,6 +4,7 @@ import math
 import cv2
 import numpy as np
 import onnxruntime
+import logging
 from onnxruntime.capi import _pybind_state as C
 
 __labels = [
@@ -145,12 +146,57 @@ def _postprocess(
 
 class NudeDetector:
     def __init__(self, model_path=None, providers=None, inference_resolution=320):
-        self.onnx_session = onnxruntime.InferenceSession(
-            os.path.join(os.path.dirname(__file__), "320n.onnx")
-            if not model_path
-            else model_path,
-            providers=C.get_available_providers() if not providers else providers,
-        )
+        # Configure logging
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+        
+        # Set up GPU providers
+        gpu_providers = [
+            ('CUDAExecutionProvider', {
+                'device_id': 0,
+                'arena_extend_strategy': 'kNextPowerOfTwo',
+                'gpu_mem_limit': 2 * 1024 * 1024 * 1024,
+                'cudnn_conv_algo_search': 'EXHAUSTIVE',
+                'do_copy_in_default_stream': True,
+            }),
+            'TensorrtExecutionProvider',
+            'CPUExecutionProvider'
+        ]
+        
+        try:
+            # Try to use GPU providers by default
+            if providers is None:
+                available_providers = C.get_available_providers()
+                self.logger.info(f"Available providers: {available_providers}")
+                
+                # Check if CUDA is available
+                if 'CUDAExecutionProvider' in available_providers:
+                    self.logger.info("CUDA is available, using GPU")
+                    providers = gpu_providers
+                else:
+                    self.logger.info("CUDA is not available, falling back to CPU")
+                    providers = ['CPUExecutionProvider']
+            
+            self.onnx_session = onnxruntime.InferenceSession(
+                os.path.join(os.path.dirname(__file__), "320n.onnx")
+                if not model_path
+                else model_path,
+                providers=providers,
+            )
+            
+            # Log which providers are actually being used
+            self.logger.info(f"Using providers: {self.onnx_session.get_providers()}")
+            
+        except Exception as e:
+            self.logger.warning(f"Error initializing GPU, falling back to CPU: {str(e)}")
+            # Fall back to CPU if GPU initialization fails
+            self.onnx_session = onnxruntime.InferenceSession(
+                os.path.join(os.path.dirname(__file__), "320n.onnx")
+                if not model_path
+                else model_path,
+                providers=['CPUExecutionProvider'],
+            )
+            
         model_inputs = self.onnx_session.get_inputs()
 
         self.input_width = inference_resolution

@@ -6,14 +6,27 @@ Looking for interested mainttainer, who can add/ work on more features for this 
 
 https://nudenet.notai.tech/ in-browser demo (the detector is run client side, i.e: in your browser, images are not sent to a server)
 
+## Installation
+
+### Basic Installation
 ```bash
 pip install --upgrade "nudenet>=3.4.2"
 ```
 
+### GPU Support (Recommended for faster processing)
+```bash
+pip install --upgrade "nudenet[gpu]>=3.4.2"
+```
+
 ```python
 from nudenet import NudeDetector
+
+# Initialize detector (will automatically use GPU if available)
 detector = NudeDetector()
 # the 320n model included with the package will be used
+
+# For explicit GPU provider selection
+# detector = NudeDetector(providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 
 detector.detect('image.jpg') # Returns list of detections
 
@@ -35,6 +48,13 @@ detector.detect_batch(['image_1.jpg', 'image_2.jpg']) # Returns list of [list of
 # To use the 640m model, download the onnx file and pass the path to the model_path argument
 
 detector = NudeDetector(model_path="downloaded_640m.onnx path", inference_resolution=640)
+
+# With explicit GPU providers
+detector = NudeDetector(
+    model_path="downloaded_640m.onnx path", 
+    inference_resolution=640,
+    providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+)
 ```
 
 - 320n is the default model and is included in the `nudenet` python package by default
@@ -80,6 +100,33 @@ all_labels = [
 ]
 ```
 
+
+### GPU Acceleration
+
+NudeNet now automatically uses GPU acceleration if available:
+
+1. Install the GPU dependencies: `pip install "nudenet[gpu]"`
+2. The detector will automatically detect and use CUDA if available
+3. GPU providers will be prioritized in this order: CUDA → TensorRT → CPU
+4. If GPU initialization fails, it will automatically fall back to CPU
+
+You can also specify providers explicitly:
+```python
+# Use CUDA with specific configuration
+detector = NudeDetector(providers=[
+    ('CUDAExecutionProvider', {
+        'device_id': 0,
+        'arena_extend_strategy': 'kNextPowerOfTwo',
+        'gpu_mem_limit': 2 * 1024 * 1024 * 1024,
+        'cudnn_conv_algo_search': 'EXHAUSTIVE',
+        'do_copy_in_default_stream': True,
+    }),
+    'CPUExecutionProvider'
+])
+
+# Force CPU only
+detector = NudeDetector(providers=['CPUExecutionProvider'])
+```
 
 ### Docker
 
