@@ -199,10 +199,10 @@ class NudeDetector:
                         self.logger.info(f"Loading PyTorch model from {pytorch_model_path}")
                         # Import the PyTorch detector
                         import sys
-                        if os.path.exists("/app/docker-scripts/simple_pytorch_detector.py"):
+                        if os.path.exists("/app/docker-scripts/pytorch_detector.py"):
                             sys.path.append("/app/docker-scripts")
                             # Use the cached model implementation for better performance
-                            from simple_pytorch_detector import get_cached_model
+                            from pytorch_detector import get_cached_model
                             
                             # Get or create the detector using the cached implementation
                             self.pytorch_detector = get_cached_model(pytorch_model_path, 'cuda')

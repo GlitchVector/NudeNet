@@ -8,9 +8,8 @@ echo "Starting NudeNet GPU container..."
 echo "Script directory: ${SCRIPT_DIR}"
 
 # Set model behavior environment variables if not already set
-export USE_SIMPLIFIED_MODEL="${USE_SIMPLIFIED_MODEL:-1}"
-export TRY_ULTRALYTICS="${TRY_ULTRALYTICS:-0}"
-echo "Model configuration: USE_SIMPLIFIED_MODEL=${USE_SIMPLIFIED_MODEL}, TRY_ULTRALYTICS=${TRY_ULTRALYTICS}"
+export TRY_ULTRALYTICS="${TRY_ULTRALYTICS:-1}"
+echo "Model configuration: Using Ultralytics model loader (TRY_ULTRALYTICS=${TRY_ULTRALYTICS})"
 
 # Add current directory to PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$APP_DIR
@@ -28,16 +27,13 @@ else
     python3 "${SCRIPT_DIR}/fix_import.py"
 fi
 
-# Check for PyTorch models - these should be pre-installed in the image
-if [ ! -f "/app/models/pytorch/320n.pt" ]; then
-    echo "ERROR: PyTorch models not found in image"
-    ls -la /app/docker-scripts/pytorch-models/
-    ls -la /app/models/pytorch/
-    exit 1
-else
-    echo "Using pre-installed PyTorch models from image"
-    ls -la /app/models/pytorch/
-fi
+# Check and ensure models are available
+echo "Verifying required models..."
+python3 "${SCRIPT_DIR}/model_manager.py" --action verify || {
+    echo "Some models are missing, attempting to download..."
+    python3 "${SCRIPT_DIR}/model_manager.py" --action ensure
+}
+python3 "${SCRIPT_DIR}/model_manager.py" --action list
 
 # Check if CUDA is available with PyTorch
 echo "Checking CUDA availability with PyTorch..."
@@ -68,7 +64,7 @@ elif [ "$1" = "detect" ] || [ -z "$1" ]; then
     
     # Run PyTorch detector
     echo "Running PyTorch detector with model: $MODEL_PATH"
-    python3 "${SCRIPT_DIR}/simple_pytorch_detector.py" --model "$MODEL_PATH" --image "$IMAGE_PATH" --resolution $RESOLUTION
+    python3 "${SCRIPT_DIR}/test_utils.py" test --detector pytorch --model "$MODEL_PATH" --image "$IMAGE_PATH"
     
 elif [ "$1" = "benchmark" ]; then
     echo "Running PyTorch benchmark test..."
@@ -80,81 +76,32 @@ elif [ "$1" = "benchmark" ]; then
         exit 1
     fi
     
-    # Simple benchmark script
-    python3 -c "
-import torch
-import time
-import sys
-import os
-from pathlib import Path
-sys.path.append('${SCRIPT_DIR}')
-from simple_pytorch_detector import SimpleYOLODetector
-
-model_path = '${MODEL_PATH}'
-print(f'Benchmarking PyTorch model: {model_path}')
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print(f'Using device: {device}')
-
-# Load model
-start_time = time.time()
-detector = SimpleYOLODetector(model_path, device)
-load_time = time.time() - start_time
-print(f'Model load time: {load_time:.4f} seconds')
-
-# Test image
-image_path = '/app/fastdeploy_recipe/cory_chase.jpeg'
-if not os.path.exists(image_path):
-    print(f'Error: Test image not found at {image_path}')
-    sys.exit(1)
-
-# Run detection 10 times
-times = []
-for i in range(10):
-    torch.cuda.synchronize() if device == 'cuda' else None
-    start = time.time()
-    detections = detector.detect(image_path)
-    torch.cuda.synchronize() if device == 'cuda' else None
-    end = time.time()
-    times.append(end - start)
-    print(f'Run {i+1}: {(end-start)*1000:.2f} ms, {len(detections)} detections')
-
-avg_time = sum(times) / len(times)
-print(f'\\nAverage detection time: {avg_time*1000:.2f} ms')
-print(f'Average FPS: {1/avg_time:.2f}')
-    "
+    # Run benchmark using test_utils.py
+    python3 "${SCRIPT_DIR}/test_utils.py" benchmark --detector pytorch --model "$MODEL_PATH" --iterations 10 --warmup 1
 
 elif [ "$1" = "check-gpu" ]; then
-    echo "Checking GPU acceleration with PyTorch..."
-    python3 -c "
-import torch
-print('PyTorch version:', torch.__version__)
-print('CUDA available:', torch.cuda.is_available())
-if torch.cuda.is_available():
-    print('CUDA version:', torch.version.cuda)
-    print('Device count:', torch.cuda.device_count())
-    print('Current device:', torch.cuda.current_device())
-    print('Device name:', torch.cuda.get_device_name(0))
-    print('Device capability:', torch.cuda.get_device_capability())
-    # Test tensor creation on GPU
-    try:
-        x = torch.rand(5, 5).cuda()
-        y = torch.rand(5, 5).cuda()
-        z = x + y
-        print('GPU tensor test: Success')
-    except Exception as e:
-        print('GPU tensor test failed:', e)
-else:
-    print('CUDA not available. Check NVIDIA drivers and CUDA installation.')
-    "
+    echo "Checking GPU acceleration..."
+    python3 "${SCRIPT_DIR}/gpu_diagnostics.py" --mode all
 
 elif [ "$1" = "test" ]; then
-    echo "Running PyTorch model test..."
+    echo "Running model tests..."
     MODEL_NAME="${2:-320n}"
     MODEL_PATH="/app/models/pytorch/${MODEL_NAME}.pt"
     
     # Optional image path
     IMAGE_PATH="${3:-/app/fastdeploy_recipe/cory_chase.jpeg}"
-    python3 "${SCRIPT_DIR}/test_models.py" "$IMAGE_PATH"
+    python3 "${SCRIPT_DIR}/test_utils.py" test --detector pytorch --model "$MODEL_PATH" --image "$IMAGE_PATH"
+
+elif [ "$1" = "compare" ]; then
+    echo "Comparing detector implementations..."
+    # Optional image path
+    IMAGE_PATH="${2:-/app/fastdeploy_recipe/cory_chase.jpeg}"
+    python3 "${SCRIPT_DIR}/test_utils.py" compare --image "$IMAGE_PATH"
+
+elif [ "$1" = "models" ]; then
+    ACTION="${2:-list}"
+    echo "Managing models: $ACTION"
+    python3 "${SCRIPT_DIR}/model_manager.py" --action "$ACTION"
     
 else
     echo "Usage: docker run [options] nudenet-gpu [command]"
@@ -165,17 +112,18 @@ else
     echo "  check-gpu              - Check if GPU acceleration is available"
     echo "  test [image]           - Run test on PyTorch model"
     echo "  api                    - Start API server on port 8080"
+    echo "  compare [image]        - Compare different detector implementations"
+    echo "  models [action]        - Manage models (list, download, verify)"
+    echo "                            Actions: list, download, verify, ensure"
     echo ""
     echo "Environment variables:"
-    echo "  USE_SIMPLIFIED_MODEL   - Set to 1 (default) to use simplified model for maximum performance"
-    echo "                           Set to 0 to attempt loading actual model files"
-    echo "  TRY_ULTRALYTICS        - Set to 1 to try loading with Ultralytics library if available"
-    echo "                           Set to 0 (default) to skip Ultralytics"
+    echo "  TRY_ULTRALYTICS        - Set to 1 (default) to use Ultralytics for model loading"
+    echo "                           Set to 0 to use basic PyTorch loading instead"
     echo ""
     echo "Examples:"
     echo "  docker run --gpus all nudenet-gpu"
     echo "  docker run --gpus all nudenet-gpu detect 640m /path/to/image.jpg"
-    echo "  docker run --gpus all -e USE_SIMPLIFIED_MODEL=0 nudenet-gpu benchmark 320n"
+    echo "  docker run --gpus all nudenet-gpu benchmark 320n"
     echo ""
     # Pass through any other command
     exec "$@"

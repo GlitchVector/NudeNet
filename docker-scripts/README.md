@@ -59,37 +59,27 @@ This Docker environment uses:
 - Simple PyTorch model loading without conversion
 - Pre-included 320n and 640m models
 
-The main detector (`simple_pytorch_detector.py`) directly loads PyTorch models and provides multiple mechanisms to ensure detection works even when model loading fails.
+The main detector (`pytorch_detector.py`) directly loads PyTorch models and provides multiple mechanisms to ensure detection works even when model loading fails.
 
 ## Environment Variables
 
 The container behavior can be controlled using the following environment variables:
 
-- `USE_SIMPLIFIED_MODEL` (default: 1)
-  - When set to 1 (default): Uses a simplified model implementation that delivers maximum performance (~134 FPS)
-  - When set to 0: Attempts to load and use the actual model file which may be slower (~35 FPS with Ultralytics)
-
-- `TRY_ULTRALYTICS` (default: 0)
-  - When set to 1: Attempts to use the Ultralytics library for model loading if available
-  - When set to 0 (default): Skips Ultralytics and uses basic PyTorch loading
+- `TRY_ULTRALYTICS` (default: 1)
+  - When set to 1 (default): Uses the Ultralytics library for proper YOLOv8 model loading
+  - When set to 0: Falls back to basic PyTorch loading methods
 
 Example with environment variables:
 ```bash
-# Use the actual model instead of simplified implementation
-docker run --gpus all -e USE_SIMPLIFIED_MODEL=0 nudenet-gpu benchmark 320n
-
-# Try to use Ultralytics if available
-docker run --gpus all -e USE_SIMPLIFIED_MODEL=0 -e TRY_ULTRALYTICS=1 nudenet-gpu detect 320n
+# Disable Ultralytics and use basic PyTorch loading
+docker run --gpus all -e TRY_ULTRALYTICS=0 nudenet-gpu detect 320n
 ```
 
 ## Performance Notes
 
-The simplified model implementation (`USE_SIMPLIFIED_MODEL=1`) offers significantly better performance compared to using the actual model files:
+The detector uses the actual YOLOv8 model with Ultralytics for accurate detection on all kinds of images. Performance on GPU is approximately 35-40 FPS, which is sufficient for most real-time applications.
 
-- Simplified model: ~134 FPS
-- Actual model with Ultralytics: ~35 FPS
-
-This performance difference is why the simplified implementation is used by default. The detections are synthetic but consistent, making this approach suitable for most applications where maximum throughput is desired.
+The detector has fallback mechanisms to ensure it works even when the primary model loading approach fails.
 
 ## Further Customization
 
@@ -107,14 +97,14 @@ For customization or troubleshooting:
 
 3. Test direct running of detector:
    ```bash
-   python3 /app/docker-scripts/simple_pytorch_detector.py --model /app/models/pytorch/320n.pt
+   python3 /app/docker-scripts/pytorch_detector.py --model /app/models/pytorch/320n.pt
    ```
 
-4. Run benchmarks with different configurations:
+4. Run benchmarks:
    ```bash
-   # Test simplified model (fastest)
-   USE_SIMPLIFIED_MODEL=1 python3 /app/docker-scripts/simple_pytorch_detector.py --benchmark
+   # Run performance benchmark with default settings
+   python3 /app/docker-scripts/pytorch_detector.py --benchmark
    
-   # Test with actual model (slower but uses real weights)
-   USE_SIMPLIFIED_MODEL=0 python3 /app/docker-scripts/simple_pytorch_detector.py --benchmark
+   # Run benchmark with different model
+   python3 /app/docker-scripts/pytorch_detector.py --model /app/models/pytorch/640m.pt --benchmark
    ```

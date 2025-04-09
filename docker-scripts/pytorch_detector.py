@@ -50,13 +50,19 @@ _MODEL_CACHE = {}
 
 def get_cached_model(model_path, device='cuda'):
     """Get a model from cache or load it if not cached"""
-    cache_key = f"{model_path}_{device}"
+    # Check if CUDA is requested but not available
+    effective_device = device
+    if device == 'cuda' and not torch.cuda.is_available():
+        logger.warning("CUDA requested but not available for cached model. Using CPU instead.")
+        effective_device = 'cpu'
+    
+    cache_key = f"{model_path}_{effective_device}"
     if cache_key in _MODEL_CACHE:
-        logger.debug(f"Using cached model for {model_path}")
+        logger.debug(f"Using cached model for {model_path} on {effective_device}")
         return _MODEL_CACHE[cache_key]
     
     # Model not in cache, create a new one
-    detector = SimpleYOLODetector(model_path, device)
+    detector = SimpleYOLODetector(model_path, effective_device)
     if detector.model is not None:  # Only cache if loaded successfully
         _MODEL_CACHE[cache_key] = detector
     return detector
@@ -65,6 +71,11 @@ class SimpleYOLODetector:
     """A simplified PyTorch YOLO detector that uses the model architecture directly"""
     
     def __init__(self, model_path, device='cuda'):
+        # Check if CUDA is requested but not available
+        if device == 'cuda' and not torch.cuda.is_available():
+            logger.warning("CUDA requested but not available. Falling back to CPU.")
+            device = 'cpu'
+            
         self.device = device
         self.model_path = model_path
         self.num_classes = len(LABELS)
@@ -144,27 +155,12 @@ class SimpleYOLODetector:
             
             return output
         
-        # Check if we should use the simplified model directly (environment variable controlled)
-        use_simplified_model = os.environ.get("USE_SIMPLIFIED_MODEL", "1").lower() in ("1", "true", "yes")
-        try_ultralytics = os.environ.get("TRY_ULTRALYTICS", "0").lower() in ("1", "true", "yes")
+        # Check environment variables for model loading behavior
+        try_ultralytics = os.environ.get("TRY_ULTRALYTICS", "1").lower() in ("1", "true", "yes")
         
-        if use_simplified_model:
-            logger.info("Using simplified model directly for maximum performance")
-            # Create a simple PyTorch Module with our custom forward function
-            class SimpleModel(torch.nn.Module):
-                def __init__(self):
-                    super().__init__()
-                    # Add a dummy parameter so it's a proper module
-                    self.dummy = torch.nn.Parameter(torch.zeros(1))
-                
-                def forward(self, x):
-                    return custom_forward(x)
-            
-            # Create and initialize the model
-            self.model = SimpleModel().to(self.device)
-            self.model.eval()
-            logger.info("Initialized simplified model successfully")
-            return True
+        # We're no longer using the simplified model approach as it's too limited
+        # Instead, we'll prioritize using Ultralytics for proper model loading
+        logger.info("Attempting to load actual model for proper detection on all images")
         
         # If we're not using simplified model directly, try standard approaches
         try:
@@ -898,11 +894,13 @@ def main():
         logger.error(f"Error: Model file not found at {args.model}")
         return 1
     
-    # Determine device
-    if args.device:
-        device = args.device
-    else:
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # Determine device (with safety check for CUDA availability)
+    device = args.device if args.device else ('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # If CUDA is requested but not available, fall back to CPU
+    if device == 'cuda' and not torch.cuda.is_available():
+        logger.warning("CUDA requested but not available. Falling back to CPU.")
+        device = 'cpu'
     
     logger.info(f"Using device: {device}")
     
@@ -1046,9 +1044,12 @@ def detect_image(image_path, model_path=None, device=None, threshold=0.25):
         else:
             raise FileNotFoundError("No model found in standard locations")
     
-    # Determine device
+    # Determine device (with safety check for CUDA availability)
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    elif device == 'cuda' and not torch.cuda.is_available():
+        logger.warning("CUDA requested but not available. Falling back to CPU.")
+        device = 'cpu'
     
     # Get or create detector using the cached implementation
     detector = get_cached_model(model_path, device)
@@ -1079,9 +1080,12 @@ def detect_batch(image_paths, model_path=None, device=None, threshold=0.25, batc
         else:
             raise FileNotFoundError("No model found in standard locations")
     
-    # Determine device
+    # Determine device (with safety check for CUDA availability)
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    elif device == 'cuda' and not torch.cuda.is_available():
+        logger.warning("CUDA requested but not available. Falling back to CPU for batch processing.")
+        device = 'cpu'
     
     # Get or create detector using the cached implementation
     detector = get_cached_model(model_path, device)
