@@ -26,6 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-setuptools \
     python3-dev \
     build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/local/cuda/lib64/libcudart.so /usr/lib/libcudart.so \
