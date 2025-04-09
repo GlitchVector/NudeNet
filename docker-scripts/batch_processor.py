@@ -11,8 +11,19 @@ import json
 import time
 import argparse
 import psutil
+import logging
 from pathlib import Path, PurePath
 from nudenet import NudeDetector
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("nudenet-batch")
 
 def normalize_path(path):
     """
@@ -64,6 +75,8 @@ def normalize_windows_path(path):
     More aggressive Windows path normalization for paths inside the JSON file.
     Handles backslashes and properly converts to Docker-mounted paths.
     """
+    original_path = path
+    
     # Replace backslashes with forward slashes
     path = path.replace('\\', '/')
     
@@ -73,34 +86,57 @@ def normalize_windows_path(path):
         drive = path[0].lower()
         # Create mount path (/mnt/d/...)
         path = f"/mnt/{drive}/{path[3:]}"
+        logger.debug(f"Converted Windows path: {original_path} → {path}")
+    else:
+        logger.debug(f"Path appears to be non-Windows or already normalized: {path}")
     
     return path
 
 def check_file_exists(path):
     """Check if a file exists, with helpful logging for debugging path issues"""
     exists = os.path.exists(path)
-    if not exists:
+    if exists:
+        logger.debug(f"File exists: {path}")
+        try:
+            size = os.path.getsize(path)
+            logger.debug(f"File size: {size} bytes")
+        except Exception as e:
+            logger.warning(f"Error getting file size: {str(e)}")
+    else:
         parent_dir = os.path.dirname(path)
         if not os.path.exists(parent_dir):
-            print(f"Warning: Parent directory doesn't exist: {parent_dir}", file=sys.stderr)
-        print(f"Warning: File not found: {path}", file=sys.stderr)
+            logger.warning(f"Parent directory doesn't exist: {parent_dir}")
+            # Try to list mountpoints for debugging
+            try:
+                mounts = []
+                if os.path.exists('/mnt'):
+                    mounts = os.listdir('/mnt')
+                logger.warning(f"Available mounts in /mnt: {mounts}")
+            except Exception as e:
+                logger.warning(f"Error checking mounts: {str(e)}")
+        logger.warning(f"File not found: {path}")
     return exists
 
 def process_image_batch(image_paths):
     """Process a batch of images and return results"""
+    logger.debug(f"Processing batch of {len(image_paths)} images")
     results = {}
     valid_paths = []
     original_to_normalized = {}
     
     # Normalize paths more aggressively for Windows file paths
+    logger.debug("Normalizing paths and checking file existence")
     for path in image_paths:
         normalized_path = normalize_windows_path(path)
         original_to_normalized[path] = normalized_path
+        logger.debug(f"Checking existence of: {normalized_path}")
         exists = check_file_exists(normalized_path)
         
         if exists:
+            logger.debug(f"Valid file found: {normalized_path}")
             valid_paths.append(path)
         else:
+            logger.warning(f"File not found, skipping: {normalized_path}")
             # File doesn't exist - record error without trying to process
             results[path] = {
                 'error': f"File not found: {normalized_path}",
@@ -220,8 +256,38 @@ def main():
                         help='Memory usage percentage at which to issue warnings (default: 85.0)')
     parser.add_argument('--memory-limit', type=float, default=95.0,
                         help='Memory usage percentage at which to abort processing (default: 95.0)')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable debug logging')
     
     args = parser.parse_args()
+    
+    # Set logging level based on debug flag
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Debug logging enabled")
+    
+    # Log environment information
+    logger.info(f"Starting NudeNet batch processor")
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"Running as user: {os.getuid()}")
+    logger.info(f"Current working directory: {os.getcwd()}")
+    
+    # Log mount points for debugging
+    try:
+        if os.path.exists('/mnt'):
+            mounts = os.listdir('/mnt')
+            logger.info(f"Available mounts in /mnt: {mounts}")
+    except Exception as e:
+        logger.warning(f"Error checking mounts: {str(e)}")
+    
+    # Log command line arguments
+    logger.info(f"Input JSON: {args.input_json}")
+    logger.info(f"Output path: {args.output}")
+    logger.info(f"Batch size: {args.batch_size}")
+    if args.model:
+        logger.info(f"Model path: {args.model}")
+    else:
+        logger.info("Using default model")
     
     # Check input file exists
     input_json_path = Path(args.input_json)
@@ -235,47 +301,89 @@ def main():
     
     # Load list of image paths from JSON
     try:
+        logger.info(f"Reading JSON file: {input_json_path}")
+        
+        try:
+            # Get file size and permissions for debugging
+            file_size = os.path.getsize(input_json_path)
+            file_perms = oct(os.stat(input_json_path).st_mode & 0o777)
+            logger.info(f"Input JSON file size: {file_size} bytes, permissions: {file_perms}")
+        except Exception as e:
+            logger.warning(f"Error getting file info: {str(e)}")
+        
         with open(input_json_path, 'r') as f:
-            data = json.load(f)
+            file_content = f.read()
+            logger.debug(f"File content (first 1000 chars): {file_content[:1000]}")
+            
+            # Parse JSON
+            data = json.loads(file_content)
+            logger.info(f"JSON parsed successfully. Type: {type(data).__name__}")
             
         # Handle different possible JSON structures
         if isinstance(data, list):
             # JSON is a simple list of paths
             image_paths = data
+            logger.info(f"Found list of paths directly in JSON root")
         elif isinstance(data, dict) and 'images' in data:
             # JSON has an 'images' key with the list
             image_paths = data['images']
+            logger.info(f"Found image paths in 'images' key")
         elif isinstance(data, dict) and 'paths' in data:
             # JSON has a 'paths' key with the list
             image_paths = data['paths']
+            logger.info(f"Found image paths in 'paths' key")
         elif isinstance(data, dict) and 'files' in data:
             # JSON has a 'files' key with the list
             image_paths = data['files']
+            logger.info(f"Found image paths in 'files' key")
         else:
             # Try to extract any list values
-            for key, value in data.items():
-                if isinstance(value, list) and len(value) > 0:
-                    image_paths = value
-                    print(f"Found image paths in key: {key}")
-                    break
-            else:
-                print("Error: Could not find list of image paths in JSON file")
+            found_paths = False
+            if isinstance(data, dict):
+                logger.debug(f"JSON keys: {list(data.keys())}")
+                for key, value in data.items():
+                    if isinstance(value, list) and len(value) > 0:
+                        image_paths = value
+                        logger.info(f"Found image paths in key: {key}")
+                        found_paths = True
+                        break
+            
+            if not found_paths:
+                logger.error(f"Could not find list of image paths in JSON file")
+                logger.debug(f"JSON content structure: {type(data)}")
                 return 1
                 
-    except json.JSONDecodeError:
-        print(f"Error: {args.input_json} is not a valid JSON file")
+    except json.JSONDecodeError as e:
+        logger.error(f"Error: {args.input_json} is not a valid JSON file: {str(e)}")
         return 1
     except Exception as e:
-        print(f"Error loading input file: {str(e)}")
+        logger.error(f"Error loading input file: {str(e)}")
         return 1
     
     if not image_paths:
         error_msg = "No image paths found in the input JSON"
+        logger.error(error_msg)
         if args.json_progress:
             print(json.dumps({"type": "error", "message": error_msg}), flush=True)
         else:
             print(error_msg)
         return 1
+        
+    # Log some sample paths for debugging
+    logger.info(f"Found {len(image_paths)} image paths in JSON")
+    if len(image_paths) > 0:
+        logger.info(f"First few paths:")
+        for i, path in enumerate(image_paths[:5]):
+            logger.info(f"  Path {i+1}: {path}")
+        
+        # Try to normalize a sample path
+        if len(image_paths) > 0:
+            sample_path = image_paths[0]
+            normalized = normalize_windows_path(sample_path)
+            logger.info(f"Sample path normalization:")
+            logger.info(f"  Original: {sample_path}")
+            logger.info(f"  Normalized: {normalized}")
+            logger.info(f"  Exists: {os.path.exists(normalized)}")
     
     # Get memory information
     vm = psutil.virtual_memory()

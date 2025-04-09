@@ -17,6 +17,7 @@ show_usage() {
   echo "  --json-progress              Output progress information in JSON format"
   echo "  --memory-warning <percent>   Memory usage threshold for warnings (default: 85.0)"
   echo "  --memory-limit <percent>     Memory usage threshold to abort processing (default: 95.0)"
+  echo "  --debug                      Enable verbose debug logging"
   echo ""
   echo "Important: When processing images with Windows paths (e.g., D:\\path\\to\\images), you MUST mount the drives:"
   echo "  * For Windows paths (WSL2):  -v /d:/mnt/d -v /c:/mnt/c (mount each drive letter you need)"
@@ -38,13 +39,6 @@ show_usage() {
   echo "Results will be printed to stdout for individual images or saved to the specified output file for batch processing"
 }
 
-# Check for GPU test flag
-if [ "$1" = "--test-gpu" ]; then
-  echo "Running NudeNet GPU Test..."
-  python3 /app/test_gpu.py
-  exit $?
-fi
-
 # Function to convert Windows path to Linux path
 convert_windows_path() {
   local win_path=$1
@@ -62,61 +56,108 @@ convert_windows_path() {
   fi
 }
 
-# Check for batch processing mode
-if [ "$1" = "--batch" ]; then
-  if [ $# -lt 3 ]; then
-    echo "Error: Batch mode requires input JSON file and output file"
-    echo "Usage: docker run --gpus all nudenet-gpu --batch /path/to/images.json --output /path/to/results.json"
+# Initialize variables for all possible parameters
+JSON_PROGRESS=false
+DEBUG=false
+BATCH_MODE=false
+BATCH_SIZE=16
+MODEL_PATH=""
+MEMORY_WARNING=85.0
+MEMORY_LIMIT=95.0
+INPUT_JSON=""
+OUTPUT_FILE=""
+
+# Array to hold positional arguments (non-flag arguments)
+POSITIONAL_ARGS=()
+
+# Parse all arguments, regardless of order
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --test-gpu)
+      echo "Running NudeNet GPU Test..."
+      python3 /app/test_gpu.py
+      exit $?
+      ;;
+    --batch)
+      BATCH_MODE=true
+      if [ $# -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "Error: --batch requires an input JSON file path"
+        exit 1
+      fi
+      INPUT_JSON=$(convert_windows_path "$2")
+      shift 2
+      ;;
+    --output|-o)
+      if [ $# -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "Error: --output requires a file path"
+        exit 1
+      fi
+      OUTPUT_FILE=$(convert_windows_path "$2")
+      shift 2
+      ;;
+    --batch-size|-b)
+      if [ $# -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "Error: --batch-size requires a number"
+        exit 1
+      fi
+      BATCH_SIZE="$2"
+      shift 2
+      ;;
+    --model|-m)
+      if [ $# -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "Error: --model requires a file path"
+        exit 1
+      fi
+      MODEL_PATH=$(convert_windows_path "$2")
+      shift 2
+      ;;
+    --memory-warning)
+      if [ $# -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "Error: --memory-warning requires a percentage value"
+        exit 1
+      fi
+      MEMORY_WARNING="$2"
+      shift 2
+      ;;
+    --memory-limit)
+      if [ $# -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "Error: --memory-limit requires a percentage value"
+        exit 1
+      fi
+      MEMORY_LIMIT="$2"
+      shift 2
+      ;;
+    --json-progress)
+      JSON_PROGRESS=true
+      shift
+      ;;
+    --debug)
+      DEBUG=true
+      shift
+      ;;
+    --*)
+      echo "Error: Unknown option $1"
+      show_usage
+      exit 1
+      ;;
+    *)
+      # Save any non-flag arguments (these are image paths in single-image mode)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Restore positional arguments
+set -- "${POSITIONAL_ARGS[@]}"
+
+# Handle batch processing mode
+if [ "$BATCH_MODE" = true ]; then
+  # Check required parameters
+  if [ -z "$INPUT_JSON" ]; then
+    echo "Error: No input JSON file specified"
     exit 1
   fi
-  
-  # Parse arguments and convert Windows paths if needed
-  INPUT_JSON=$(convert_windows_path "$2")
-  
-  # Look for --output flag
-  OUTPUT_FILE=""
-  BATCH_SIZE=16
-  MODEL_PATH=""
-  JSON_PROGRESS=false
-  MEMORY_WARNING=85.0
-  MEMORY_LIMIT=95.0
-  
-  shift 2  # Skip the --batch and input file arguments
-  
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --output|-o)
-        # Convert Windows path to Linux path if needed
-        OUTPUT_FILE=$(convert_windows_path "$2")
-        shift 2
-        ;;
-      --batch-size|-b)
-        BATCH_SIZE="$2"
-        shift 2
-        ;;
-      --model|-m)
-        # Convert Windows path to Linux path if needed
-        MODEL_PATH=$(convert_windows_path "$2")
-        shift 2
-        ;;
-      --json-progress)
-        JSON_PROGRESS=true
-        shift
-        ;;
-      --memory-warning)
-        MEMORY_WARNING="$2"
-        shift 2
-        ;;
-      --memory-limit)
-        MEMORY_LIMIT="$2"
-        shift 2
-        ;;
-      *)
-        echo "Unknown option: $1"
-        exit 1
-        ;;
-    esac
-  done
   
   if [ -z "$OUTPUT_FILE" ]; then
     echo "Error: --output parameter is required for batch processing"
@@ -128,8 +169,9 @@ if [ "$1" = "--batch" ]; then
   echo "Output file: $OUTPUT_FILE"
   echo "Batch size: $BATCH_SIZE"
   
-  # Call the batch processor script with the parsed arguments
-  ARGS="--batch-size $BATCH_SIZE"
+  # Build command arguments
+  ARGS="--batch-size $BATCH_SIZE --memory-warning $MEMORY_WARNING --memory-limit $MEMORY_LIMIT"
+  
   if [ ! -z "$MODEL_PATH" ]; then
     ARGS="$ARGS --model $MODEL_PATH"
   fi
@@ -138,9 +180,12 @@ if [ "$1" = "--batch" ]; then
     ARGS="$ARGS --json-progress"
   fi
   
-  # Add memory management parameters
-  ARGS="$ARGS --memory-warning $MEMORY_WARNING --memory-limit $MEMORY_LIMIT"
+  if [ "$DEBUG" = true ]; then
+    ARGS="$ARGS --debug"
+    echo "Debug logging enabled"
+  fi
   
+  # Run the batch processor
   python3 /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
   exit $?
 fi
