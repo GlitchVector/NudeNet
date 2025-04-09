@@ -21,7 +21,8 @@ RUN apt-get update && \
 
 # Create symbolic links for CUDA libraries to ensure they're found
 RUN ln -s /usr/local/cuda/lib64/libcudart.so /usr/lib/libcudart.so && \
-    ln -s /usr/local/cuda/lib64/libcublas.so /usr/lib/libcublas.so
+    ln -s /usr/local/cuda/lib64/libcublas.so /usr/lib/libcublas.so && \
+    ln -s /usr/local/cuda/lib64/libnvrtc.so /usr/lib/libnvrtc.so
 
 # Upgrade pip and install essential packages
 RUN python3 -m pip install --upgrade pip setuptools wheel
