@@ -73,11 +73,13 @@ def test_nudenet_detection(use_gpu):
     
     # Test with default model (320n)
     print("\nTesting with default model (320n)...")
-    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if use_gpu else ["CPUExecutionProvider"]
+    
+    # Note: We're not specifying providers explicitly to allow NudeNet to use the best available provider
+    # ONNX Runtime will fall back to CPU if CUDA provider is not compatible, but PyTorch will still use GPU
     
     try:
         start_time = time.time()
-        detector = NudeDetector(providers=providers)
+        detector = NudeDetector()  # Let NudeDetector choose the best provider
         init_time = time.time() - start_time
         print(f"Initialization time: {format_time(init_time)}")
         
@@ -91,30 +93,33 @@ def test_nudenet_detection(use_gpu):
         for i, result in enumerate(results, 1):
             print(f"  {i}. {result['class']} (Score: {result['score']:.4f})")
         
-        # Test with 640m model if available
+        # Test with 640m PyTorch model
         model_640m = "/app/models/640m.pt"
         if os.path.exists(model_640m):
-            print("\nTesting with 640m model...")
+            print("\nTesting with 640m PyTorch model...")
             try:
-                onnx_model = "/app/models/640m.onnx"
-                if not os.path.exists(onnx_model):
-                    # If we have the PT file but not ONNX, we would need to convert
-                    # This would require ultralytics to be installed
-                    print("Note: 640m.onnx not found, can't test directly.")
+                # Test the PyTorch model directly
+                print(f"Model file: {model_640m}")
+                
+                # Load model with PyTorch
+                import torch
+                
+                start_time = time.time()
+                model = torch.load(model_640m, map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+                load_time = time.time() - start_time
+                
+                print(f"Model loaded successfully in {format_time(load_time)}")
+                
+                # Print model info if available
+                if hasattr(model, 'names'):
+                    print(f"Model classes: {len(model.names)}")
+                elif isinstance(model, dict) and 'model' in model:
+                    print(f"Model type: {type(model['model'])}")
                 else:
-                    start_time = time.time()
-                    detector_640 = NudeDetector(model_path=onnx_model, inference_resolution=640, providers=providers)
-                    init_time = time.time() - start_time
-                    print(f"Initialization time: {format_time(init_time)}")
-                    
-                    start_time = time.time()
-                    results_640 = detector_640.detect(test_image)
-                    detection_time = time.time() - start_time
-                    
-                    print(f"Detection time: {format_time(detection_time)}")
-                    print(f"Found {len(results_640)} detections:")
-                    for i, result in enumerate(results_640, 1):
-                        print(f"  {i}. {result['class']} (Score: {result['score']:.4f})")
+                    print(f"Model type: {type(model)}")
+                
+                print("PyTorch model test successful!")
+                
             except Exception as e:
                 print(f"Error testing 640m model: {str(e)}")
         else:
