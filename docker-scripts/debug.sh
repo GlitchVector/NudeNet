@@ -33,7 +33,7 @@ echo
 
 echo "=== Python Environment ==="
 python3 --version
-pip list | grep -E "onnxruntime|torch|numpy|opencv|nudenet"
+pip list | grep -E "torch|numpy|opencv|nudenet"
 echo
 
 echo "=== Python Path ==="
@@ -49,14 +49,14 @@ try:
     print('SUCCESS: NudeDetector imported')
     detector = NudeDetector()
     print('SUCCESS: NudeDetector initialized')
-    print(f'ONNX Providers: {detector.onnx_session.get_providers()}')
+    print(f'Using PyTorch detector: {detector.use_pytorch}')
 except Exception as e:
     print(f'ERROR: {type(e).__name__}: {str(e)}')
 "
 echo
 
 echo "=== Model Directory Structure ==="
-find /app/models -type f -name "*.onnx" -o -name "*.pt" 2>/dev/null | sort
+find /app/models -type f -name "*.pt" 2>/dev/null | sort
 echo
 
 echo "=== NVIDIA Information ==="
@@ -76,7 +76,7 @@ fi
 echo
 
 echo "=== Container Environment Variables ==="
-env | grep -E "NVIDIA|CUDA|ONNX"
+env | grep -E "NVIDIA|CUDA|PYTORCH"
 echo
 
 echo "===== DIAGNOSTIC COMPLETE ====="

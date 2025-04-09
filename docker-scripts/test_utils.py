@@ -24,11 +24,7 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-try:
-    import onnxruntime
-    ONNX_AVAILABLE = True
-except ImportError:
-    ONNX_AVAILABLE = False
+# We only use PyTorch now, no ONNX runtime
 
 # Class for colored output
 class Colors:
@@ -117,45 +113,7 @@ def load_pytorch_detector(model_path=None):
         print(f"{Colors.RED}Error loading PyTorch detector: {e}{Colors.ENDC}")
         return None
 
-def load_onnx_detector(model_path=None):
-    """Load the ONNX Runtime detector"""
-    # Default model paths
-    default_paths = [
-        "/app/models/onnx/320n.onnx",
-        "/app/nudenet/320n.onnx",
-    ]
-    
-    # If model_path is None, try default paths
-    if model_path is None:
-        for path in default_paths:
-            if os.path.exists(path):
-                model_path = path
-                break
-    
-    if model_path is None or not os.path.exists(model_path):
-        print(f"{Colors.RED}No ONNX model found at {model_path}{Colors.ENDC}")
-        return None
-    
-    # Import the ONNX runner
-    runner_path = "/app/docker-scripts/onnx_runner.py"
-    if not os.path.exists(runner_path):
-        print(f"{Colors.RED}ONNX runner not found at {runner_path}{Colors.ENDC}")
-        return None
-    
-    # Use importlib to import the module
-    import_name = "onnx_runner"
-    spec = importlib.util.spec_from_file_location(import_name, runner_path)
-    runner_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(runner_module)
-    
-    # Create detector
-    print(f"Loading ONNX detector with model {model_path}...")
-    try:
-        detector = runner_module.ONNXDetector(model_path)
-        return detector
-    except Exception as e:
-        print(f"{Colors.RED}Error loading ONNX detector: {e}{Colors.ENDC}")
-        return None
+# We only use PyTorch now
 
 def run_single_test(detector, image_path, confidence=0.25):
     """Run a single test with the given detector"""
@@ -355,25 +313,7 @@ def compare_detectors(image_path, iterations=5):
         except Exception as e:
             print(f"{Colors.RED}Error: {e}{Colors.ENDC}")
     
-    # Test NudeDetector with ONNX
-    if NUDENET_AVAILABLE:
-        print("\nTesting NudeDetector with ONNX:")
-        try:
-            detector = NudeDetector(use_pytorch=False)
-            start_time = time.time()
-            for i in range(iterations):
-                detections = detector.detect(image_path)
-                print(f"  Run {i+1}: {len(detections)} detections")
-            duration = (time.time() - start_time) / iterations
-            fps = 1 / duration
-            print(f"  Average: {duration*1000:.2f} ms ({fps:.2f} FPS)")
-            results["NudeDetector_ONNX"] = {
-                "duration": duration,
-                "fps": fps,
-                "detections": len(detections)
-            }
-        except Exception as e:
-            print(f"{Colors.RED}Error: {e}{Colors.ENDC}")
+    # We only test NudeDetector with PyTorch now
     
     # Test PyTorch detector
     print("\nTesting PyTorch detector:")
@@ -395,25 +335,7 @@ def compare_detectors(image_path, iterations=5):
         except Exception as e:
             print(f"{Colors.RED}Error: {e}{Colors.ENDC}")
     
-    # Test ONNX detector
-    print("\nTesting ONNX detector:")
-    onnx_detector = load_onnx_detector()
-    if onnx_detector:
-        try:
-            start_time = time.time()
-            for i in range(iterations):
-                detections = onnx_detector.detect(image_path)
-                print(f"  Run {i+1}: {len(detections)} detections")
-            duration = (time.time() - start_time) / iterations
-            fps = 1 / duration
-            print(f"  Average: {duration*1000:.2f} ms ({fps:.2f} FPS)")
-            results["ONNX_Detector"] = {
-                "duration": duration,
-                "fps": fps,
-                "detections": len(detections)
-            }
-        except Exception as e:
-            print(f"{Colors.RED}Error: {e}{Colors.ENDC}")
+    # We only use PyTorch now
     
     # Print comparison
     if results:
@@ -433,7 +355,7 @@ def main():
     # Test command
     test_parser = subparsers.add_parser('test', help='Run a single test')
     test_parser.add_argument('--detector', type=str, default='pytorch',
-                           choices=['pytorch', 'onnx', 'nudenet'],
+                           choices=['pytorch', 'nudenet'],
                            help='Detector to use')
     test_parser.add_argument('--model', type=str, default=None,
                            help='Path to model file')
@@ -447,7 +369,7 @@ def main():
     # Benchmark command
     bench_parser = subparsers.add_parser('benchmark', help='Run benchmark')
     bench_parser.add_argument('--detector', type=str, default='pytorch',
-                            choices=['pytorch', 'onnx', 'nudenet'],
+                            choices=['pytorch', 'nudenet'],
                             help='Detector to use')
     bench_parser.add_argument('--model', type=str, default=None,
                             help='Path to model file')
@@ -465,7 +387,7 @@ def main():
     # Batch command
     batch_parser = subparsers.add_parser('batch', help='Run batch test')
     batch_parser.add_argument('--detector', type=str, default='pytorch',
-                            choices=['pytorch', 'onnx', 'nudenet'],
+                            choices=['pytorch', 'nudenet'],
                             help='Detector to use')
     batch_parser.add_argument('--model', type=str, default=None,
                             help='Path to model file')
@@ -512,8 +434,7 @@ def main():
         detector = None
         if args.detector == 'pytorch':
             detector = load_pytorch_detector(args.model)
-        elif args.detector == 'onnx':
-            detector = load_onnx_detector(args.model)
+        # We only use PyTorch or NudeDetector now
         elif args.detector == 'nudenet':
             if NUDENET_AVAILABLE:
                 detector = NudeDetector(use_pytorch=True)
@@ -535,8 +456,7 @@ def main():
         detector = None
         if args.detector == 'pytorch':
             detector = load_pytorch_detector(args.model)
-        elif args.detector == 'onnx':
-            detector = load_onnx_detector(args.model)
+        # We only use PyTorch or NudeDetector now
         elif args.detector == 'nudenet':
             if NUDENET_AVAILABLE:
                 detector = NudeDetector(use_pytorch=True)
@@ -558,8 +478,7 @@ def main():
         detector = None
         if args.detector == 'pytorch':
             detector = load_pytorch_detector(args.model)
-        elif args.detector == 'onnx':
-            detector = load_onnx_detector(args.model)
+        # We only use PyTorch or NudeDetector now
         elif args.detector == 'nudenet':
             if NUDENET_AVAILABLE:
                 detector = NudeDetector(use_pytorch=True)

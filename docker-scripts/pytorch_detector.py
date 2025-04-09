@@ -23,7 +23,7 @@ if os.environ.get("NUDENET_LOG_LEVEL"):
     if isinstance(log_level, int):
         logger.setLevel(log_level)
 
-# Labels matching the ONNX model
+# Class labels for detections
 LABELS = [
     "FEMALE_GENITALIA_COVERED",
     "FACE_FEMALE",

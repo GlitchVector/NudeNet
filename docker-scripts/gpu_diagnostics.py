@@ -93,28 +93,7 @@ def check_torch_cuda():
         print(f"{Colors.RED}Error checking PyTorch CUDA: {e}{Colors.ENDC}")
         return False
 
-def check_onnx_providers():
-    """Check ONNX Runtime providers"""
-    print_section_header("ONNX Runtime Providers Check")
-    
-    try:
-        import onnxruntime as ort
-        print(f"ONNX Runtime version: {ort.__version__}")
-        providers = ort.get_available_providers()
-        print("Available providers:")
-        for idx, provider in enumerate(providers):
-            print(f"  {idx+1}. {provider}")
-        
-        gpu_available = 'CUDAExecutionProvider' in providers
-        print_result("CUDA execution provider available", gpu_available)
-        
-        return gpu_available
-    except ImportError:
-        print(f"{Colors.RED}ONNX Runtime not installed - cannot check providers{Colors.ENDC}")
-        return False
-    except Exception as e:
-        print(f"{Colors.RED}Error checking ONNX Runtime: {e}{Colors.ENDC}")
-        return False
+# We only use PyTorch now, no ONNX runtime checks
 
 def check_system_nvidia():
     """Check system NVIDIA setup (drivers, CUDA)"""
@@ -260,7 +239,7 @@ def test_pytorch_detector():
 def main():
     parser = argparse.ArgumentParser(description="GPU Diagnostics Tool")
     parser.add_argument('--mode', type=str, default='all',
-                      choices=['all', 'torch', 'onnx', 'system', 'detector', 'pytorch'],
+                      choices=['all', 'torch', 'system', 'detector', 'pytorch'],
                       help='Which diagnostic mode to run')
     parser.add_argument('--verbose', action='store_true',
                       help='Enable verbose output')
@@ -274,9 +253,6 @@ def main():
     
     if args.mode in ['all', 'torch']:
         results['torch'] = check_torch_cuda()
-        
-    if args.mode in ['all', 'onnx']:
-        results['onnx'] = check_onnx_providers()
         
     if args.mode in ['all', 'system']:
         results['system'] = check_system_nvidia()
@@ -305,8 +281,7 @@ def main():
             print(f"\n{Colors.YELLOW}Recommendation: Check NVIDIA drivers and CUDA installation{Colors.ENDC}")
         if 'torch' in failed_tests:
             print(f"\n{Colors.YELLOW}Recommendation: Verify PyTorch CUDA support{Colors.ENDC}")
-        if 'onnx' in failed_tests:
-            print(f"\n{Colors.YELLOW}Recommendation: Verify ONNX Runtime GPU providers{Colors.ENDC}")
+        # We only use PyTorch now
     
     return 0 if all(results.values()) else 1
 

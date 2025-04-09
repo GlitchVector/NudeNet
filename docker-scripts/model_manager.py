@@ -13,25 +13,15 @@ import json
 import time
 from pathlib import Path
 
-# Base model directories
+# Base model directories - focusing only on PyTorch models
 MODELS_DIR = "/app/models" if os.path.exists("/app") else os.path.join(os.path.dirname(__file__), "models")
-ONNX_DIR = os.path.join(MODELS_DIR, "onnx")
 PYTORCH_DIR = os.path.join(MODELS_DIR, "pytorch")
 
 # Base URL for models - direct from official source
 BASE_URL = "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/"
 
-# Model definitions
+# Model definitions - focusing only on PyTorch models
 MODELS = [
-    {
-        "name": "320n.onnx",
-        "url": f"{BASE_URL}320n.onnx",
-        "size": "17.3 MB",
-        "type": "onnx",
-        "resolution": "320x320",
-        "description": "Smaller, faster model (320x320)",
-        "output_path": os.path.join(ONNX_DIR, "320n.onnx")
-    },
     {
         "name": "320n.pt",
         "url": f"{BASE_URL}320n.pt",
@@ -40,15 +30,6 @@ MODELS = [
         "resolution": "320x320",
         "description": "Smaller, faster model (320x320) in PyTorch format",
         "output_path": os.path.join(PYTORCH_DIR, "320n.pt")
-    },
-    {
-        "name": "640m.onnx",
-        "url": f"{BASE_URL}640m.onnx",
-        "size": "51.9 MB",
-        "type": "onnx",
-        "resolution": "640x640",
-        "description": "Larger, more accurate model (640x640)",
-        "output_path": os.path.join(ONNX_DIR, "640m.onnx")
     },
     {
         "name": "640m.pt",
@@ -62,10 +43,9 @@ MODELS = [
 ]
 
 def create_directories():
-    """Create model directories if they don't exist"""
-    os.makedirs(ONNX_DIR, exist_ok=True)
+    """Create PyTorch model directory if it doesn't exist"""
     os.makedirs(PYTORCH_DIR, exist_ok=True)
-    print(f"Model directories created/verified: {ONNX_DIR}, {PYTORCH_DIR}")
+    print(f"PyTorch model directory created/verified: {PYTORCH_DIR}")
 
 def calculate_md5(filename):
     """Calculate the MD5 hash of a file"""
@@ -126,7 +106,7 @@ def download_models(model_types=None, force=False):
     create_directories()
     
     if model_types is None:
-        model_types = ["onnx", "pytorch"]
+        model_types = ["pytorch"]
     
     success_count = 0
     failure_count = 0
@@ -166,7 +146,7 @@ def download_models(model_types=None, force=False):
 def verify_models(model_types=None):
     """Verify that models exist and have reasonable file size"""
     if model_types is None:
-        model_types = ["onnx", "pytorch"]
+        model_types = ["pytorch"]
     
     all_verified = True
     for model in MODELS:
@@ -220,7 +200,7 @@ def main():
                       choices=['download', 'verify', 'list', 'ensure'],
                       help='Action to perform (download, verify, list, ensure)')
     parser.add_argument('--type', type=str, default='all',
-                      choices=['all', 'onnx', 'pytorch'],
+                      choices=['all', 'pytorch'],
                       help='Type of models to operate on')
     parser.add_argument('--force', action='store_true',
                       help='Force download even if models exist')
