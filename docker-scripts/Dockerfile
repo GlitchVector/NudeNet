@@ -67,11 +67,12 @@ COPY ./docker-scripts/cory_chase.jpeg /app/docker-scripts/cory_chase.jpeg
 
 # Copy scripts that change frequently
 COPY ./docker-scripts/test_gpu.py /app/test_gpu.py
+COPY ./docker-scripts/batch_processor.py /app/batch_processor.py
 COPY ./docker-scripts/entrypoint.sh /app/entrypoint.sh
 
 # Fix line endings and make scripts executable
-RUN sed -i 's/\r$//' /app/entrypoint.sh /app/test_gpu.py && \
-    chmod +x /app/entrypoint.sh /app/test_gpu.py
+RUN sed -i 's/\r$//' /app/entrypoint.sh /app/test_gpu.py /app/batch_processor.py && \
+    chmod +x /app/entrypoint.sh /app/test_gpu.py /app/batch_processor.py
 
 # Set entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]

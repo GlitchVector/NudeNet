@@ -5,15 +5,98 @@ set -e
 show_usage() {
   echo "NudeNet Image Detector"
   echo "Usage:"
-  echo "  * Process images: docker run --gpus all -v /path/to/images:/images nudenet-gpu /images/image1.jpg [/images/image2.jpg ...]"
-  echo "  * Run GPU test:   docker run --gpus all nudenet-gpu --test-gpu"
-  echo "Results will be printed to stdout"
+  echo "  * Process individual images: docker run --gpus all nudenet-gpu /path/to/image1.jpg [/path/to/image2.jpg ...]"
+  echo "  * Process batch from JSON:   docker run --gpus all nudenet-gpu --batch /path/to/images.json --output /path/to/results.json"
+  echo "  * Run GPU test:              docker run --gpus all nudenet-gpu --test-gpu"
+  echo ""
+  echo "Note: If Docker cannot access your files, you may need to add volume mounts:"
+  echo "  docker run --gpus all -v /some/path:/some/path nudenet-gpu --batch /some/path/images.json --output /some/path/results.json"
+  echo ""
+  echo "Results will be printed to stdout for individual images or saved to the specified output file for batch processing"
 }
 
 # Check for GPU test flag
 if [ "$1" = "--test-gpu" ]; then
   echo "Running NudeNet GPU Test..."
   python3 /app/test_gpu.py
+  exit $?
+fi
+
+# Function to convert Windows path to Linux path
+convert_windows_path() {
+  local win_path=$1
+  
+  # Check if it looks like a Windows path (starts with drive letter and colon)
+  if [[ $win_path =~ ^[A-Za-z]: ]]; then
+    # Extract drive letter, convert to lowercase, and remove colon
+    local drive=$(echo "${win_path:0:1}" | tr '[:upper:]' '[:lower:]')
+    # Convert backslashes to forward slashes and replace drive with /mnt/drive
+    local linux_path=$(echo "${win_path:2}" | tr '\\' '/')
+    echo "/mnt/$drive$linux_path"
+  else
+    # Not a Windows path or already a Linux path
+    echo "$win_path"
+  fi
+}
+
+# Check for batch processing mode
+if [ "$1" = "--batch" ]; then
+  if [ $# -lt 3 ]; then
+    echo "Error: Batch mode requires input JSON file and output file"
+    echo "Usage: docker run --gpus all nudenet-gpu --batch /path/to/images.json --output /path/to/results.json"
+    exit 1
+  fi
+  
+  # Parse arguments and convert Windows paths if needed
+  INPUT_JSON=$(convert_windows_path "$2")
+  
+  # Look for --output flag
+  OUTPUT_FILE=""
+  BATCH_SIZE=16
+  MODEL_PATH=""
+  
+  shift 2  # Skip the --batch and input file arguments
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --output|-o)
+        # Convert Windows path to Linux path if needed
+        OUTPUT_FILE=$(convert_windows_path "$2")
+        shift 2
+        ;;
+      --batch-size|-b)
+        BATCH_SIZE="$2"
+        shift 2
+        ;;
+      --model|-m)
+        # Convert Windows path to Linux path if needed
+        MODEL_PATH=$(convert_windows_path "$2")
+        shift 2
+        ;;
+      *)
+        echo "Unknown option: $1"
+        exit 1
+        ;;
+    esac
+  done
+  
+  if [ -z "$OUTPUT_FILE" ]; then
+    echo "Error: --output parameter is required for batch processing"
+    exit 1
+  fi
+  
+  echo "Running batch processing..."
+  echo "Input JSON: $INPUT_JSON"
+  echo "Output file: $OUTPUT_FILE"
+  echo "Batch size: $BATCH_SIZE"
+  
+  # Call the batch processor script with the parsed arguments
+  ARGS="--batch-size $BATCH_SIZE"
+  if [ ! -z "$MODEL_PATH" ]; then
+    ARGS="$ARGS --model $MODEL_PATH"
+  fi
+  
+  python3 /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
   exit $?
 fi
 
