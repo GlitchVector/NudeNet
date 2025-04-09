@@ -17,7 +17,7 @@ Main container entry point that handles commands and environment variables.
 Main detector implementation for PyTorch models.
 
 - **Usage**: Used by other tools, typically not called directly
-- **Features**: 
+- **Features**:
   - YOLOv8 model loading with Ultralytics
   - Robust fallback mechanisms
   - Batch processing support
@@ -31,13 +31,6 @@ Comprehensive GPU diagnostics tool that combines multiple testing utilities.
 
 - **Usage**: `python3 gpu_diagnostics.py [--mode MODE]`
 - **Modes**: all, torch, onnx, system, detector, pytorch
-
-### 4. model_manager.py
-
-Unified model management tool for downloading, verifying, and listing models.
-
-- **Usage**: `python3 model_manager.py [--action ACTION]`
-- **Actions**: download, verify, list, ensure
 
 ### 5. test_utils.py
 
@@ -64,7 +57,7 @@ Debugging utility for container troubleshooting.
 
 - **Usage**: `bash debug.sh`
 
-### 8. __init__.py
+### 8. **init**.py
 
 Makes the directory a Python package for easier importing.
 
@@ -102,19 +95,6 @@ python3 test_utils.py compare
 
 # Specific image and iterations
 python3 test_utils.py compare --image /path/to/image.jpg --iterations 10
-```
-
-### Managing Models
-
-```bash
-# List available models
-python3 model_manager.py --action list
-
-# Download missing models
-python3 model_manager.py --action download
-
-# Verify model integrity
-python3 model_manager.py --action verify
 ```
 
 ### GPU Diagnostics

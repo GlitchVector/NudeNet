@@ -1099,11 +1099,21 @@ def detect_image(image_path, model_path=None, device=None, threshold=0.25):
     """
     # Find model if not specified
     if model_path is None:
-        if os.path.exists("/app/models/pytorch/320n.pt"):
-            model_path = "/app/models/pytorch/320n.pt"
-        elif os.path.exists("/app/docker-scripts/pytorch-models/320n.pt"):
-            model_path = "/app/docker-scripts/pytorch-models/320n.pt"
-        else:
+        # Look in multiple locations
+        script_dir = os.path.dirname(__file__)
+        possible_paths = [
+            "/app/models/pytorch/320n.pt",                   # Main docker path
+            os.path.join(script_dir, "pytorch-models/320n.pt"),  # Local backup in docker-scripts
+            "/app/docker-scripts/pytorch-models/320n.pt",        # Docker path to backup
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                model_path = path
+                logger.info(f"Found model at: {path}")
+                break
+                
+        if model_path is None:
             raise FileNotFoundError("No model found in standard locations")
     
     # Determine device (with safety check for CUDA availability)
@@ -1133,13 +1143,23 @@ def detect_batch(image_paths, model_path=None, device=None, threshold=0.25, batc
     Returns:
         List of detection lists, one for each image
     """
-    # Find model if not specified
+    # Find model if not specified - use the same logic as detect_image
     if model_path is None:
-        if os.path.exists("/app/models/pytorch/320n.pt"):
-            model_path = "/app/models/pytorch/320n.pt"
-        elif os.path.exists("/app/docker-scripts/pytorch-models/320n.pt"):
-            model_path = "/app/docker-scripts/pytorch-models/320n.pt"
-        else:
+        # Look in multiple locations
+        script_dir = os.path.dirname(__file__)
+        possible_paths = [
+            "/app/models/pytorch/320n.pt",                   # Main docker path
+            os.path.join(script_dir, "pytorch-models/320n.pt"),  # Local backup in docker-scripts
+            "/app/docker-scripts/pytorch-models/320n.pt",        # Docker path to backup
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                model_path = path
+                logger.info(f"Found model at: {path}")
+                break
+                
+        if model_path is None:
             raise FileNotFoundError("No model found in standard locations")
     
     # Determine device (with safety check for CUDA availability)

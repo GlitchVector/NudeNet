@@ -30,13 +30,8 @@ else
     python3 "${SCRIPT_DIR}/fix_import.py"
 fi
 
-# Check and ensure models are available
-echo "Verifying required models..."
-python3 "${SCRIPT_DIR}/model_manager.py" --action verify || {
-    echo "Some models are missing, attempting to download..."
-    python3 "${SCRIPT_DIR}/model_manager.py" --action ensure
-}
-python3 "${SCRIPT_DIR}/model_manager.py" --action list
+# Models are already copied during Docker build
+# All model checks and management are removed for simplicity
 
 # Check if CUDA is available with PyTorch
 echo "Checking CUDA availability with PyTorch..."
@@ -109,11 +104,6 @@ elif [ "$1" = "compare" ]; then
     IMAGE_PATH="${2:-/app/fastdeploy_recipe/cory_chase.jpeg}"
     python3 "${SCRIPT_DIR}/test_utils.py" compare --image "$IMAGE_PATH"
 
-elif [ "$1" = "models" ]; then
-    ACTION="${2:-list}"
-    echo "Managing models: $ACTION"
-    python3 "${SCRIPT_DIR}/model_manager.py" --action "$ACTION"
-    
 else
     echo "Usage: docker run [options] nudenet-gpu [command]"
     echo "Commands:"
@@ -126,8 +116,6 @@ else
     echo "  test [image]           - Run test on PyTorch model"
     echo "  api                    - Start API server on port 8080"
     echo "  compare [image]        - Compare different detector implementations"
-    echo "  models [action]        - Manage models (list, download, verify)"
-    echo "                            Actions: list, download, verify, ensure"
     echo ""
     echo "Environment variables:"
     echo "  TRY_ULTRALYTICS        - Set to 1 (default) to use Ultralytics for model loading"

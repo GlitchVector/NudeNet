@@ -75,10 +75,12 @@ def find_test_image(default_paths=None):
 
 def load_pytorch_detector(model_path=None):
     """Load the PyTorch detector"""
-    # Default model paths
+    # Default model paths - look in prioritized order
+    script_dir = os.path.dirname(__file__)
     default_paths = [
-        "/app/models/pytorch/320n.pt",
-        "/app/docker-scripts/pytorch-models/320n.pt",
+        "/app/models/pytorch/320n.pt",                      # Main docker path (primary)
+        os.path.join(script_dir, "pytorch-models/320n.pt"),  # Local backup in docker-scripts
+        "/app/docker-scripts/pytorch-models/320n.pt",        # Docker path to backup
     ]
     
     # If model_path is None, try default paths
@@ -86,6 +88,7 @@ def load_pytorch_detector(model_path=None):
         for path in default_paths:
             if os.path.exists(path):
                 model_path = path
+                print(f"Found model at: {path}")
                 break
     
     if model_path is None or not os.path.exists(model_path):

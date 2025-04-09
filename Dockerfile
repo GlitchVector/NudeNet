@@ -56,32 +56,11 @@ RUN echo '#!/usr/bin/python3\ntry:\n  import nudenet\n  print("NudeNet imported 
     chmod +x /app/test_import.py && \
     python3 /app/test_import.py
 
-# Create PyTorch model directory
-RUN mkdir -p /app/models/pytorch
-
-# Download only the PyTorch models from official URLs
-RUN echo "Downloading PyTorch models from official sources..." && \
-    mkdir -p /app/models/pytorch && \
-    download_with_retry() { \
-        URL=$1; DEST=$2; \
-        for i in {1..3}; do \
-            echo "Attempt $i to download ${DEST}..." && \
-            wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 -q \
-                "${URL}" -O "${DEST}" && return 0 || { \
-                if [ $i -lt 3 ]; then \
-                    echo "Download attempt $i failed for ${DEST}. Retrying..." && \
-                    sleep 2; \
-                else \
-                    echo "All download attempts failed for ${DEST}. Will try at runtime."; \
-                    return 1; \
-                fi; \
-            } \
-        done; \
-    } && \
-    download_with_retry "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.pt" "/app/models/pytorch/320n.pt" && \
-    download_with_retry "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.pt" "/app/models/pytorch/640m.pt" || true && \
-    ls -la /app/models/pytorch/ 2>/dev/null || true && \
-    echo "PyTorch model download completed"
+# Create models directory and copy the models directly
+RUN mkdir -p /app/models/pytorch && \
+    cp -v /app/docker-scripts/pytorch-models/*.pt /app/models/pytorch/ && \
+    echo "Models in /app/models/pytorch:" && \
+    ls -la /app/models/pytorch/
 
 # We don't need ONNX Runtime since we're focusing on PyTorch with CUDA
 
