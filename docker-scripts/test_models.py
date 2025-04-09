@@ -90,7 +90,7 @@ def run_pytorch_test(test_image_path):
     try:
         # Import pytorch detector
         sys.path.append('/app/docker-scripts')
-        from pytorch_detector import PyTorchNudeDetector
+        from simple_pytorch_detector import SimpleYOLODetector
         
         # Model path
         model_path = "/app/models/pytorch/320n.pt"
@@ -100,12 +100,13 @@ def run_pytorch_test(test_image_path):
         
         print_section("Loading PyTorch model")
         start_time = time.time()
-        detector = PyTorchNudeDetector(model_path, 320)
+        import torch
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        detector = SimpleYOLODetector(model_path, device)
         load_time = time.time() - start_time
         print_result("Model loading time", f"{load_time:.4f} seconds", True)
         
         # Check if using GPU
-        import torch
         is_using_gpu = detector.device == 'cuda'
         cuda_available = torch.cuda.is_available()
         print_result("CUDA available", f"{cuda_available}", cuda_available)
@@ -148,10 +149,12 @@ def compare_results(test_image_path):
         
         # Import pytorch detector
         sys.path.append('/app/docker-scripts')
-        from pytorch_detector import PyTorchNudeDetector
+        from simple_pytorch_detector import SimpleYOLODetector
         
         # Run PyTorch detection
-        pt_detector = PyTorchNudeDetector("/app/models/pytorch/320n.pt", 320)
+        import torch
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        pt_detector = SimpleYOLODetector("/app/models/pytorch/320n.pt", device)
         pt_start = time.time()
         pt_detections = pt_detector.detect(test_image_path)
         pt_time = time.time() - pt_start

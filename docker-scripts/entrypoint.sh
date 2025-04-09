@@ -17,63 +17,36 @@ if python3 -c "import nudenet; print('✅ NudeNet module found at:', nudenet.__f
 else
     echo "❌ ERROR: Cannot import nudenet module"
     echo "Running diagnostics..."
-    echo "Python path:"
     python3 -c "import sys; print(sys.path)"
-    echo "Looking for nudenet package files:"
-    find $APP_DIR -name "__init__.py" | grep nudenet
-    echo "Installation status:"
-    pip list | grep nudenet
-    echo "Package content:"
-    ls -la $APP_DIR/nudenet
-    
     # Try to fix the import issue
     echo "Attempting to fix import issue..."
     python3 "${SCRIPT_DIR}/fix_import.py"
 fi
 
-# Check if models exist, but don't re-download (they should be in the image)
-if [ ! -f "/app/models/onnx/320n.onnx" ] || [ ! -f "/app/models/pytorch/320n.pt" ]; then
-    echo "WARNING: Pre-downloaded models not found in image, downloading now..."
-    bash "${SCRIPT_DIR}/ensure_models.sh"
+# Check for PyTorch models - these should be pre-installed in the image
+if [ ! -f "/app/models/pytorch/320n.pt" ]; then
+    echo "ERROR: PyTorch models not found in image"
+    ls -la /app/docker-scripts/pytorch-models/
+    ls -la /app/models/pytorch/
+    exit 1
 else
-    echo "Using pre-installed models from image"
+    echo "Using pre-installed PyTorch models from image"
+    ls -la /app/models/pytorch/
 fi
+
+# Check if CUDA is available with PyTorch
+echo "Checking CUDA availability with PyTorch..."
+python3 -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('Device count:', torch.cuda.device_count()); print('Device name:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
 
 if [ "$1" = "api" ]; then
     echo "Starting API server..."
     exec python3 -m fastdeploy --recipe /app/fastdeploy_recipe --mode rest
-elif [ "$1" = "check-gpu" ]; then
-    echo "Running comprehensive GPU check with both ONNX Runtime and PyTorch..."
-    python3 "${SCRIPT_DIR}/check_gpu_combined.py"
-elif [ "$1" = "benchmark" ]; then
-    echo "Running GPU benchmark test..."
-    if [ "$2" = "pytorch" ]; then
-        python3 "${SCRIPT_DIR}/benchmark.py" --pytorch-only
-    elif [ "$2" = "onnx" ]; then
-        python3 "${SCRIPT_DIR}/benchmark.py" --onnx-only
-    elif [ "$2" = "640" ] || [ "$2" = "640m" ]; then
-        python3 "${SCRIPT_DIR}/benchmark.py" --model-640
-    elif [ "$2" = "compare" ]; then
-        python3 "${SCRIPT_DIR}/benchmark.py" --pytorch
-    else
-        python3 "${SCRIPT_DIR}/benchmark.py"
-    fi
-elif [ "$1" = "download-models" ]; then
-    echo "Downloading all model variants..."
-    if [ "$2" = "force" ]; then
-        echo "Forcing re-download of all models..."
-        python3 "${SCRIPT_DIR}/download_models.py" --force
-    else
-        python3 "${SCRIPT_DIR}/download_models.py"
-    fi
-elif [ "$1" = "pytorch" ]; then
-    # Additional argument is the model name
-    if [ -z "$2" ]; then
-        echo "Error: Please specify a model variant (320n or 640m)"
-        exit 1
-    fi
     
-    MODEL_PATH="/app/models/pytorch/$2.pt"
+elif [ "$1" = "detect" ] || [ -z "$1" ]; then
+    # Default action: Run detection with PyTorch model
+    MODEL_NAME="${2:-320n}"
+    MODEL_PATH="/app/models/pytorch/${MODEL_NAME}.pt"
+    
     if [ ! -f "$MODEL_PATH" ]; then
         echo "Error: Model not found at $MODEL_PATH"
         echo "Available models:"
@@ -84,76 +57,115 @@ elif [ "$1" = "pytorch" ]; then
     # Optional image path
     IMAGE_PATH="${3:-/app/fastdeploy_recipe/cory_chase.jpeg}"
     RESOLUTION=320
-    if [ "$2" = "640m" ]; then
+    if [[ "$MODEL_NAME" == *"640"* ]]; then
         RESOLUTION=640
     fi
     
     # Run PyTorch detector
     echo "Running PyTorch detector with model: $MODEL_PATH"
-    python3 "${SCRIPT_DIR}/pytorch_detector.py" --model "$MODEL_PATH" --image "$IMAGE_PATH" --resolution $RESOLUTION
-elif [ "$1" = "test" ]; then
-    echo "Running model tests..."
-    if [ -n "$2" ]; then
-        python3 "${SCRIPT_DIR}/test_models.py" "$2"
-    else
-        python3 "${SCRIPT_DIR}/test_models.py"
-    fi
-elif [ "$1" = "debug" ]; then
-    echo "Running container diagnostics..."
-    bash "${SCRIPT_DIR}/debug.sh"
-elif [ "$1" = "check-cuda" ]; then
-    echo "Checking CUDA with PyTorch..."
-    python3 "${SCRIPT_DIR}/check_cuda.py"
-elif [ "$1" = "fix-models" ]; then
-    echo "Attempting to fix PyTorch models for compatibility..."
-    python3 "${SCRIPT_DIR}/yolov8_converter.py" --input "/app/models/pytorch/320n.pt"
-    echo ""
-    python3 "${SCRIPT_DIR}/yolov8_converter.py" --input "/app/models/pytorch/640m.pt"
-elif [ "$1" = "onnx" ]; then
-    # Additional argument is the model name
-    if [ -z "$2" ]; then
-        echo "Error: Please specify a model variant (320n or 640m)"
+    python3 "${SCRIPT_DIR}/simple_pytorch_detector.py" --model "$MODEL_PATH" --image "$IMAGE_PATH" --resolution $RESOLUTION
+    
+elif [ "$1" = "benchmark" ]; then
+    echo "Running PyTorch benchmark test..."
+    MODEL_NAME="${2:-320n}"
+    MODEL_PATH="/app/models/pytorch/${MODEL_NAME}.pt"
+    
+    if [ ! -f "$MODEL_PATH" ]; then
+        echo "Error: Model not found at $MODEL_PATH"
         exit 1
     fi
     
-    MODEL_PATH="/app/models/onnx/$2.onnx"
-    if [ ! -f "$MODEL_PATH" ]; then
-        echo "Error: Model not found at $MODEL_PATH"
-        echo "Available models:"
-        ls -la /app/models/onnx/
-        exit 1
-    fi
+    # Simple benchmark script
+    python3 -c "
+import torch
+import time
+import sys
+import os
+from pathlib import Path
+sys.path.append('${SCRIPT_DIR}')
+from simple_pytorch_detector import SimpleYOLODetector
+
+model_path = '${MODEL_PATH}'
+print(f'Benchmarking PyTorch model: {model_path}')
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f'Using device: {device}')
+
+# Load model
+start_time = time.time()
+detector = SimpleYOLODetector(model_path, device)
+load_time = time.time() - start_time
+print(f'Model load time: {load_time:.4f} seconds')
+
+# Test image
+image_path = '/app/fastdeploy_recipe/cory_chase.jpeg'
+if not os.path.exists(image_path):
+    print(f'Error: Test image not found at {image_path}')
+    sys.exit(1)
+
+# Run detection 10 times
+times = []
+for i in range(10):
+    torch.cuda.synchronize() if device == 'cuda' else None
+    start = time.time()
+    detections = detector.detect(image_path)
+    torch.cuda.synchronize() if device == 'cuda' else None
+    end = time.time()
+    times.append(end - start)
+    print(f'Run {i+1}: {(end-start)*1000:.2f} ms, {len(detections)} detections')
+
+avg_time = sum(times) / len(times)
+print(f'\\nAverage detection time: {avg_time*1000:.2f} ms')
+print(f'Average FPS: {1/avg_time:.2f}')
+    "
+
+elif [ "$1" = "check-gpu" ]; then
+    echo "Checking GPU acceleration with PyTorch..."
+    python3 -c "
+import torch
+print('PyTorch version:', torch.__version__)
+print('CUDA available:', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('CUDA version:', torch.version.cuda)
+    print('Device count:', torch.cuda.device_count())
+    print('Current device:', torch.cuda.current_device())
+    print('Device name:', torch.cuda.get_device_name(0))
+    print('Device capability:', torch.cuda.get_device_capability())
+    # Test tensor creation on GPU
+    try:
+        x = torch.rand(5, 5).cuda()
+        y = torch.rand(5, 5).cuda()
+        z = x + y
+        print('GPU tensor test: Success')
+    except Exception as e:
+        print('GPU tensor test failed:', e)
+else:
+    print('CUDA not available. Check NVIDIA drivers and CUDA installation.')
+    "
+
+elif [ "$1" = "test" ]; then
+    echo "Running PyTorch model test..."
+    MODEL_NAME="${2:-320n}"
+    MODEL_PATH="/app/models/pytorch/${MODEL_NAME}.pt"
     
     # Optional image path
     IMAGE_PATH="${3:-/app/fastdeploy_recipe/cory_chase.jpeg}"
-    SIZE=320
-    if [ "$2" = "640m" ]; then
-        SIZE=640
-    fi
+    python3 "${SCRIPT_DIR}/test_models.py" "$IMAGE_PATH"
     
-    # Run ONNX runner
-    echo "Running direct ONNX inference with model: $MODEL_PATH"
-    python3 "${SCRIPT_DIR}/onnx_runner.py" --model "$MODEL_PATH" --image "$IMAGE_PATH" --size $SIZE
 else
     echo "Usage: docker run [options] nudenet-gpu [command]"
     echo "Commands:"
-    echo "  api             - Start API server on port 8080"
-    echo "  check-gpu       - Check if GPU acceleration is available with ONNX Runtime and PyTorch"
-    echo "  check-cuda      - Check CUDA availability with PyTorch"
-    echo "  fix-models      - Fix PyTorch models for compatibility with PyTorch 2.6+"
-    echo "  onnx [model]    - Run direct ONNX inference (320n or 640m)"
-    echo "  benchmark       - Run performance benchmark"
-    echo "  download-models - Force re-download all model models"
-    echo "  pytorch [model] - Run with PyTorch model (320n or 640m)"
-    echo "  test [image]    - Run test on both ONNX and PyTorch models"
-    echo "  debug           - Run diagnostic checks on the container"
-    echo "  bash            - Start a bash shell"
-    if [ -z "$1" ]; then
-        # Default command
-        echo "Default: Checking basic GPU acceleration availability"
-        exec python3 -c "from nudenet import NudeDetector; print(\"Available providers:\", NudeDetector().onnx_session.get_providers()); print(\"Using GPU acceleration:\", \"CUDAExecutionProvider\" in NudeDetector().onnx_session.get_providers())"
-    else
-        # Pass through any other command
-        exec "$@"
-    fi
+    echo "  detect [model] [image] - Run detection with PyTorch model (default command)"
+    echo "                            Model can be 320n (default) or 640m"
+    echo "  benchmark [model]      - Run performance benchmark with PyTorch model"
+    echo "  check-gpu              - Check if GPU acceleration is available"
+    echo "  test [image]           - Run test on PyTorch model"
+    echo "  api                    - Start API server on port 8080"
+    echo ""
+    echo "Examples:"
+    echo "  docker run --gpus all nudenet-gpu"
+    echo "  docker run --gpus all nudenet-gpu detect 640m /path/to/image.jpg"
+    echo "  docker run --gpus all nudenet-gpu benchmark 320n"
+    echo ""
+    # Pass through any other command
+    exec "$@"
 fi
