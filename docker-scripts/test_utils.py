@@ -202,8 +202,15 @@ def run_benchmark(detector, image_path, iterations=10, warmup=1, confidence=0.25
     print(f"  Average detection time: {avg_time*1000:.2f} ms")
     print(f"  Min detection time:     {min_time*1000:.2f} ms")
     print(f"  Max detection time:     {max_time*1000:.2f} ms")
-    print(f"  FPS:                    {fps:.2f}")
+    print(f"  {Colors.BOLD}{Colors.GREEN}FPS:                    {fps:.2f}{Colors.ENDC}")
     print(f"  Detections:             {sum(detection_counts)/len(detection_counts):.1f} (avg)")
+    
+    # Print a more visible summary
+    print(f"\n{Colors.BOLD}{Colors.BLUE}{'=' * 50}{Colors.ENDC}")
+    print(f"{Colors.BOLD}{Colors.BLUE}  BENCHMARK SUMMARY FOR {iterations} RUNS{Colors.ENDC}")
+    print(f"{Colors.BOLD}{Colors.BLUE}{'=' * 50}{Colors.ENDC}")
+    print(f"{Colors.BOLD}Average FPS: {Colors.GREEN}{fps:.2f}{Colors.ENDC}")
+    print(f"{Colors.BOLD}Average detection time: {avg_time*1000:.2f} ms{Colors.ENDC}")
     
     return {
         "iterations": iterations,
@@ -344,6 +351,13 @@ def compare_detectors(image_path, iterations=5):
         print("-" * 50)
         for name, result in results.items():
             print(f"{name:<20} {result['duration']*1000:<10.2f} {result['fps']:<10.2f} {result['detections']:<10}")
+        
+        # Add more visible FPS summary
+        print(f"\n{Colors.BOLD}{Colors.BLUE}{'=' * 50}{Colors.ENDC}")
+        print(f"{Colors.BOLD}{Colors.BLUE}  DETECTOR COMPARISON - FPS RESULTS{Colors.ENDC}")
+        print(f"{Colors.BOLD}{Colors.BLUE}{'=' * 50}{Colors.ENDC}")
+        for name, result in results.items():
+            print(f"{Colors.BOLD}{name}: {Colors.GREEN}{result['fps']:.2f} FPS{Colors.ENDC}")
     
     return results
 

@@ -76,8 +76,16 @@ elif [ "$1" = "benchmark" ]; then
         exit 1
     fi
     
+    # Optional image path and iterations
+    IMAGE_PATH="${3:-/app/fastdeploy_recipe/cory_chase.jpeg}"
+    ITERATIONS="${4:-10}"
+    
+    echo "Benchmarking model: $MODEL_NAME ($MODEL_PATH)"
+    echo "Image: $IMAGE_PATH"
+    echo "Iterations: $ITERATIONS"
+    
     # Run benchmark using test_utils.py
-    python3 "${SCRIPT_DIR}/test_utils.py" benchmark --detector pytorch --model "$MODEL_PATH" --iterations 10 --warmup 1
+    python3 "${SCRIPT_DIR}/test_utils.py" benchmark --detector pytorch --model "$MODEL_PATH" --image "$IMAGE_PATH" --iterations "$ITERATIONS" --warmup 1
 
 elif [ "$1" = "check-gpu" ]; then
     echo "Checking GPU acceleration..."
@@ -108,7 +116,9 @@ else
     echo "Commands:"
     echo "  detect [model] [image] - Run detection with PyTorch model (default command)"
     echo "                            Model can be 320n (default) or 640m"
-    echo "  benchmark [model]      - Run performance benchmark with PyTorch model"
+    echo "  benchmark [model] [image] [iterations] - Run performance benchmark with PyTorch model"
+    echo "                            Model can be 320n (default) or 640m"
+    echo "                            Default iterations: 10"
     echo "  check-gpu              - Check if GPU acceleration is available"
     echo "  test [image]           - Run test on PyTorch model"
     echo "  api                    - Start API server on port 8080"
@@ -124,6 +134,7 @@ else
     echo "  docker run --gpus all nudenet-gpu"
     echo "  docker run --gpus all nudenet-gpu detect 640m /path/to/image.jpg"
     echo "  docker run --gpus all nudenet-gpu benchmark 320n"
+    echo "  docker run --gpus all nudenet-gpu benchmark 640m /path/to/image.jpg 20"
     echo ""
     # Pass through any other command
     exec "$@"
