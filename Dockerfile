@@ -59,14 +59,33 @@ RUN echo '#!/usr/bin/python3\ntry:\n  import nudenet\n  print("NudeNet imported 
 # Create model directories
 RUN mkdir -p /app/models/onnx /app/models/pytorch
 
-# Download the models directly from official URLs
+# Download the models directly from official URLs with retry
 RUN echo "Downloading models from official sources..." && \
-    wget -q https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.pt -O /app/models/pytorch/320n.pt && \
-    wget -q https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.pt -O /app/models/pytorch/640m.pt && \
-    wget -q https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx -O /app/models/onnx/320n.onnx && \
-    wget -q https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.onnx -O /app/models/onnx/640m.onnx && \
-    ls -la /app/models/pytorch/ /app/models/onnx/ && \
-    echo "Models downloaded successfully"
+    for i in {1..3}; do \
+        echo "Attempt $i to download models..." && \
+        wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 -q \
+            https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.pt \
+            -O /app/models/pytorch/320n.pt && \
+        wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 -q \
+            https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.pt \
+            -O /app/models/pytorch/640m.pt && \
+        wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 -q \
+            https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx \
+            -O /app/models/onnx/320n.onnx && \
+        wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 -q \
+            https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.onnx \
+            -O /app/models/onnx/640m.onnx && \
+        break || { \
+            if [ $i -lt 3 ]; then \
+                echo "Download attempt $i failed. Retrying..." && \
+                sleep 2; \
+            else \
+                echo "All download attempts failed. Continuing anyway, models will be downloaded at runtime."; \
+            fi; \
+        } \
+    done && \
+    ls -la /app/models/pytorch/ /app/models/onnx/ 2>/dev/null || true && \
+    echo "Model download step completed"
 
 # Install ONNX Runtime (after PyTorch to ensure compatibility)
 RUN pip install onnxruntime-gpu
