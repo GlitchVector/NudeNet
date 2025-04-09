@@ -42,8 +42,8 @@ RUN pip install "numpy<2.0.0" opencv-python-headless
 # Install PyTorch with CUDA 11.8 compatibility - ensuring a version that works with our models
 RUN pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 
-# Install tools including ultralytics for proper model loading
-RUN pip install fastdeploy ultralytics
+# Install only essential tools for API server
+RUN pip install fastdeploy
 
 # Install package in development mode
 RUN cd /app && pip install -e .

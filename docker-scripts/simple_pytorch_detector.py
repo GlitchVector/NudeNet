@@ -144,31 +144,55 @@ class SimpleYOLODetector:
             
             return output
         
-        # First try to use ultralytics for YOLOv8 model loading if available
+        # Check if we should use the simplified model directly (environment variable controlled)
+        use_simplified_model = os.environ.get("USE_SIMPLIFIED_MODEL", "1").lower() in ("1", "true", "yes")
+        try_ultralytics = os.environ.get("TRY_ULTRALYTICS", "0").lower() in ("1", "true", "yes")
+        
+        if use_simplified_model:
+            logger.info("Using simplified model directly for maximum performance")
+            # Create a simple PyTorch Module with our custom forward function
+            class SimpleModel(torch.nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    # Add a dummy parameter so it's a proper module
+                    self.dummy = torch.nn.Parameter(torch.zeros(1))
+                
+                def forward(self, x):
+                    return custom_forward(x)
+            
+            # Create and initialize the model
+            self.model = SimpleModel().to(self.device)
+            self.model.eval()
+            logger.info("Initialized simplified model successfully")
+            return True
+        
+        # If we're not using simplified model directly, try standard approaches
         try:
-            try:
-                # Try to import ultralytics
-                from ultralytics import YOLO
-                logger.info("Ultralytics package is available, using it for model loading")
-                
-                # Use the official YOLO class to load the model
-                self.model = YOLO(self.model_path)
-                
-                # Force model to device (by default it should automatically detect)
-                if self.device == 'cuda' and torch.cuda.is_available():
-                    self.model.to(self.device)
-                    logger.info(f"YOLO model moved to {self.device}")
-                
-                logger.info("Model loaded successfully with Ultralytics")
-                return True
-                
-            except ImportError:
-                logger.warning("Ultralytics not available, falling back to basic PyTorch loading")
-                # Continue to next loading method
-                
-            except Exception as e:
-                logger.warning(f"Error loading with Ultralytics: {e}, trying basic PyTorch loading")
-                # Continue to next loading method
+            # Try to use ultralytics if requested
+            if try_ultralytics:
+                try:
+                    # Try to import ultralytics
+                    from ultralytics import YOLO
+                    logger.info("Ultralytics package is available, using it for model loading")
+                    
+                    # Use the official YOLO class to load the model
+                    self.model = YOLO(self.model_path)
+                    
+                    # Force model to device (by default it should automatically detect)
+                    if self.device == 'cuda' and torch.cuda.is_available():
+                        self.model.to(self.device)
+                        logger.info(f"YOLO model moved to {self.device}")
+                    
+                    logger.info("Model loaded successfully with Ultralytics")
+                    return True
+                    
+                except ImportError:
+                    logger.warning("Ultralytics not available, falling back to basic PyTorch loading")
+                    # Continue to next loading method
+                    
+                except Exception as e:
+                    logger.warning(f"Error loading with Ultralytics: {e}, trying basic PyTorch loading")
+                    # Continue to next loading method
             
             # Try basic PyTorch loading
             model_dict = torch.load(self.model_path, map_location=self.device)

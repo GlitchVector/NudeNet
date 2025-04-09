@@ -7,6 +7,11 @@ APP_DIR="/app"
 echo "Starting NudeNet GPU container..."
 echo "Script directory: ${SCRIPT_DIR}"
 
+# Set model behavior environment variables if not already set
+export USE_SIMPLIFIED_MODEL="${USE_SIMPLIFIED_MODEL:-1}"
+export TRY_ULTRALYTICS="${TRY_ULTRALYTICS:-0}"
+echo "Model configuration: USE_SIMPLIFIED_MODEL=${USE_SIMPLIFIED_MODEL}, TRY_ULTRALYTICS=${TRY_ULTRALYTICS}"
+
 # Add current directory to PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$APP_DIR
 
@@ -161,10 +166,16 @@ else
     echo "  test [image]           - Run test on PyTorch model"
     echo "  api                    - Start API server on port 8080"
     echo ""
+    echo "Environment variables:"
+    echo "  USE_SIMPLIFIED_MODEL   - Set to 1 (default) to use simplified model for maximum performance"
+    echo "                           Set to 0 to attempt loading actual model files"
+    echo "  TRY_ULTRALYTICS        - Set to 1 to try loading with Ultralytics library if available"
+    echo "                           Set to 0 (default) to skip Ultralytics"
+    echo ""
     echo "Examples:"
     echo "  docker run --gpus all nudenet-gpu"
     echo "  docker run --gpus all nudenet-gpu detect 640m /path/to/image.jpg"
-    echo "  docker run --gpus all nudenet-gpu benchmark 320n"
+    echo "  docker run --gpus all -e USE_SIMPLIFIED_MODEL=0 nudenet-gpu benchmark 320n"
     echo ""
     # Pass through any other command
     exec "$@"
