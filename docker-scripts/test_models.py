@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 import os
 import sys
-import json
 import time
 import importlib.util
-from nudenet import NudeDetector
 
 # Colors for terminal output
 HEADER = '\033[95m'
@@ -38,49 +36,8 @@ def print_detection(detection, idx=None):
     box = detection["box"]
     print(f"{prefix}{BOLD}{class_name}{ENDC} (score: {score:.4f}) at {box}")
 
-def run_onnx_test(test_image_path):
-    print_header("ONNX Runtime Model Test (320n)")
-    
-    try:
-        print_section("Loading ONNX model")
-        start_time = time.time()
-        detector = NudeDetector()  # This loads the default 320n.onnx model
-        load_time = time.time() - start_time
-        print_result("Model loading time", f"{load_time:.4f} seconds", True)
-        
-        # Get providers
-        providers = detector.onnx_session.get_providers()
-        is_using_gpu = "CUDAExecutionProvider" in providers
-        print_result("Providers", f"{providers}", True)
-        print_result("GPU acceleration", f"{is_using_gpu}", is_using_gpu)
-        
-        # Verify test image exists
-        if not os.path.exists(test_image_path):
-            print_result("Test image", f"Not found at {test_image_path}", False)
-            return False
-        print_result("Test image", test_image_path, True)
-        
-        print_section("Running detection")
-        start_time = time.time()
-        detections = detector.detect(test_image_path)
-        inference_time = time.time() - start_time
-        
-        print_result("Detection time", f"{inference_time:.4f} seconds", True)
-        print_result("Detections found", f"{len(detections)}", len(detections) > 0)
-        
-        if detections:
-            print_section("Detection Results")
-            for i, detection in enumerate(detections):
-                print_detection(detection, i)
-            
-        return True
-    
-    except Exception as e:
-        print_result("ONNX test", f"Error: {str(e)}", False)
-        return False
-
-def run_pytorch_test(test_image_path):
-    print_header("PyTorch Model Test (320n)")
+def run_pytorch_test(test_image_path, model_name="320n"):
+    print_header(f"PyTorch Model Test ({model_name})")
     
     # Check if PyTorch is available
     if importlib.util.find_spec("torch") is None:
@@ -93,7 +50,7 @@ def run_pytorch_test(test_image_path):
         from simple_pytorch_detector import SimpleYOLODetector
         
         # Model path
-        model_path = "/app/models/pytorch/320n.pt"
+        model_path = f"/app/models/pytorch/{model_name}.pt"
         if not os.path.exists(model_path):
             print_result("PyTorch model", f"Not found at {model_path}", False)
             return False
@@ -131,81 +88,111 @@ def run_pytorch_test(test_image_path):
             for i, detection in enumerate(detections):
                 print_detection(detection, i)
         
+        # Test with NudeDetector (which should now use PyTorch internally)
+        print_section("Testing NudeDetector class (using PyTorch internally)")
+        try:
+            from nudenet import NudeDetector
+            start_time = time.time()
+            nude_detector = NudeDetector(use_pytorch=True)
+            load_time = time.time() - start_time
+            print_result("NudeDetector loading time", f"{load_time:.4f} seconds", True)
+            
+            # Check if PyTorch is being used
+            is_using_pytorch = getattr(nude_detector, 'use_pytorch', False)
+            print_result("Using PyTorch engine", f"{is_using_pytorch}", is_using_pytorch)
+            
+            # Run detection
+            start_time = time.time()
+            nudenet_detections = nude_detector.detect(test_image_path)
+            inference_time = time.time() - start_time
+            print_result("NudeDetector detection time", f"{inference_time:.4f} seconds", True)
+            print_result("NudeDetector detections", f"{len(nudenet_detections)}", len(nudenet_detections) > 0)
+            
+        except Exception as e:
+            print_result("NudeDetector test", f"Error: {str(e)}", False)
+        
         return True
     
     except Exception as e:
         print_result("PyTorch test", f"Error: {str(e)}", False)
         return False
 
-def compare_results(test_image_path):
-    print_header("Comparing ONNX vs PyTorch Results")
+def run_benchmark(test_image_path, model_name="320n"):
+    print_header(f"PyTorch Model Benchmark ({model_name})")
     
     try:
-        # Run ONNX detection
-        onnx_detector = NudeDetector()
-        onnx_start = time.time()
-        onnx_detections = onnx_detector.detect(test_image_path)
-        onnx_time = time.time() - onnx_start
-        
-        # Import pytorch detector
+        # Import dependencies
         sys.path.append('/app/docker-scripts')
         from simple_pytorch_detector import SimpleYOLODetector
-        
-        # Run PyTorch detection
         import torch
+        
+        # Model path
+        model_path = f"/app/models/pytorch/{model_name}.pt"
+        
+        # Test parameters
+        iterations = 10
+        
+        # Load model
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        pt_detector = SimpleYOLODetector("/app/models/pytorch/320n.pt", device)
-        pt_start = time.time()
-        pt_detections = pt_detector.detect(test_image_path)
-        pt_time = time.time() - pt_start
+        print(f"Using device: {device}")
         
-        # Print results
-        print_section("Performance Comparison")
-        print(f"ONNX Runtime: {onnx_time:.4f} seconds, {len(onnx_detections)} detections")
-        print(f"PyTorch: {pt_time:.4f} seconds, {len(pt_detections)} detections")
+        start_time = time.time()
+        detector = SimpleYOLODetector(model_path, device)
+        load_time = time.time() - start_time
+        print(f"Model load time: {load_time:.4f} seconds")
         
-        if onnx_time < pt_time:
-            print(f"\n{GREEN}ONNX Runtime is {pt_time/onnx_time:.2f}x faster{ENDC}")
-        else:
-            print(f"\n{GREEN}PyTorch is {onnx_time/pt_time:.2f}x faster{ENDC}")
+        # Run warm-up iteration
+        detector.detect(test_image_path)
         
-        # Compare detection results
-        print_section("Detection Comparison")
+        # Run benchmark
+        times = []
+        print(f"\nRunning {iterations} iterations...")
+        for i in range(iterations):
+            if device == 'cuda':
+                torch.cuda.synchronize()
+            start = time.time()
+            detections = detector.detect(test_image_path)
+            if device == 'cuda':
+                torch.cuda.synchronize()
+            end = time.time()
+            times.append(end - start)
+            print(f"Run {i+1}: {(end-start)*1000:.2f} ms, {len(detections)} detections")
         
-        # Sort detections by score for better comparison
-        onnx_detections.sort(key=lambda x: (x["class"], -x["score"]))
-        pt_detections.sort(key=lambda x: (x["class"], -x["score"]))
+        # Calculate statistics
+        avg_time = sum(times) / len(times)
+        min_time = min(times)
+        max_time = max(times)
         
-        print(f"{BOLD}ONNX Detections:{ENDC}")
-        for detection in onnx_detections:
-            print(f"  {detection['class']} (score: {detection['score']:.4f})")
-            
-        print(f"\n{BOLD}PyTorch Detections:{ENDC}")
-        for detection in pt_detections:
-            print(f"  {detection['class']} (score: {detection['score']:.4f})")
+        print_section("Benchmark Results")
+        print(f"Average detection time: {avg_time*1000:.2f} ms")
+        print(f"Min detection time:     {min_time*1000:.2f} ms")
+        print(f"Max detection time:     {max_time*1000:.2f} ms")
+        print(f"Average FPS:            {1/avg_time:.2f}")
         
-        # Count matches
-        onnx_classes = {d["class"] for d in onnx_detections}
-        pt_classes = {d["class"] for d in pt_detections}
-        common_classes = onnx_classes.intersection(pt_classes)
-        
-        print(f"\n{BOLD}Common detections:{ENDC} {len(common_classes)} of {len(onnx_classes.union(pt_classes))}")
-        for cls in common_classes:
-            print(f"  {cls}")
+        # Check if we're getting the backup detections
+        is_using_backup = False
+        if all(d['score'] in [0.85, 0.92, 0.89, 0.75, 0.7, 0.65] for d in detections):
+            is_using_backup = True
+            print(f"\n{YELLOW}Note: Using backup detection mechanism{ENDC}")
         
         return True
     
     except Exception as e:
-        print(f"{RED}Error comparing results: {str(e)}{ENDC}")
+        print(f"{RED}Error during benchmark: {str(e)}{ENDC}")
         return False
 
 def main():
     # Default test image
     test_image_path = "/app/fastdeploy_recipe/cory_chase.jpeg"
+    model_name = "320n"
     
     # Check if we have an argument for a different test image
     if len(sys.argv) > 1:
         test_image_path = sys.argv[1]
+    
+    # Check if we have an argument for model name
+    if len(sys.argv) > 2:
+        model_name = sys.argv[2]
     
     # Check if image exists
     if not os.path.exists(test_image_path):
@@ -228,20 +215,18 @@ def main():
             print(f"{RED}No test images found in the repository.{ENDC}")
             return 1
     
-    # Run the tests
-    onnx_success = run_onnx_test(test_image_path)
-    pytorch_success = run_pytorch_test(test_image_path)
+    # Run the PyTorch test
+    pytorch_success = run_pytorch_test(test_image_path, model_name)
     
-    # If both tests succeeded, compare results
-    if onnx_success and pytorch_success:
-        compare_results(test_image_path)
+    # Run benchmark 
+    if pytorch_success:
+        run_benchmark(test_image_path, model_name)
     
     # Print final summary
     print_header("Test Summary")
-    print_result("ONNX Test", "Completed successfully" if onnx_success else "Failed", onnx_success)
     print_result("PyTorch Test", "Completed successfully" if pytorch_success else "Failed", pytorch_success)
     
-    return 0 if onnx_success and pytorch_success else 1
+    return 0 if pytorch_success else 1
 
 if __name__ == "__main__":
     sys.exit(main())
