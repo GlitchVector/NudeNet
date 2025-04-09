@@ -64,13 +64,14 @@ def download_file(url, output_path, expected_md5=None):
     try:
         if os.path.exists(output_path):
             print(f"File already exists: {output_path}")
-            # Skip MD5 verification to avoid issues with changing file hashes
+            # Check file exists with non-zero size
             file_size = os.path.getsize(output_path)
-            if file_size > 1000000:  # If file is larger than 1MB, assume it's valid
+            if file_size > 0:  # Any non-zero size is acceptable
                 print(f"File size is {file_size/1024/1024:.1f} MB, assuming valid download")
+                # Note: We now know these models can be small (~40KB), so we don't re-download based on size
                 return True
             else:
-                print(f"File seems small ({file_size/1024:.1f} KB), re-downloading")
+                print(f"File has zero size, re-downloading")
             # No longer check MD5 as the models may change over time
         
         # Create parent directory if it doesn't exist
@@ -88,12 +89,13 @@ def download_file(url, output_path, expected_md5=None):
         urllib.request.urlretrieve(url, output_path, reporthook=report_progress)
         print("")  # New line after progress
         
-        # Check file size instead of MD5
+        # Verify file exists with non-zero size
         file_size = os.path.getsize(output_path)
-        if file_size > 1000000:  # If file is larger than 1MB, assume it's valid
+        if file_size > 0:  # Any non-zero size is acceptable
             print(f"Download complete. File size: {file_size/1024/1024:.1f} MB")
+            # Note: We now know these models can be small (~40KB), so we don't warn about small size
         else:
-            print(f"Warning: Downloaded file is small ({file_size/1024:.1f} KB), may be incomplete")
+            print(f"Warning: Downloaded file has zero size, may be incomplete")
         
         print(f"Download completed: {output_path}")
         return True
@@ -158,6 +160,7 @@ def verify_models(model_types=None):
                 file_size = os.path.getsize(output_path)
                 if file_size > 0:  # Any non-zero size is acceptable
                     print(f"File verified ✅: {file_size/1024:.1f} KB")
+                    # Note: We now know these models can be small (~40KB), so we don't need a large size check
                 else:
                     print(f"File has zero size ❌")
                     all_verified = False
@@ -185,12 +188,7 @@ def list_models():
         if os.path.exists(output_path):
             size_mb = os.path.getsize(output_path) / (1024*1024)
             print(f"   Actual size: {size_mb:.1f} MB")
-            
-                # Check file size instead of MD5
-            if size_mb > 1.0:  # If file is larger than 1MB, assume it's valid
-                print(f"   Size check: valid ✅ ({size_mb:.1f} MB)")
-            else:
-                print(f"   Size check: file seems small ❌ ({size_mb:.1f} MB)")
+            # No size check needed - we know some model files are genuinely small
         
         print("")
 
