@@ -9,7 +9,10 @@ echo "Script directory: ${SCRIPT_DIR}"
 
 # Set model behavior environment variables if not already set
 export TRY_ULTRALYTICS="${TRY_ULTRALYTICS:-1}"
-echo "Model configuration: Using Ultralytics model loader (TRY_ULTRALYTICS=${TRY_ULTRALYTICS})"
+export USE_BACKUP_MODEL="${USE_BACKUP_MODEL:-0}"
+echo "Model configuration:"
+echo "- Using Ultralytics model loader (TRY_ULTRALYTICS=${TRY_ULTRALYTICS})"
+echo "- Using backup model if needed (USE_BACKUP_MODEL=${USE_BACKUP_MODEL})"
 
 # Add current directory to PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$APP_DIR
@@ -129,12 +132,15 @@ else
     echo "Environment variables:"
     echo "  TRY_ULTRALYTICS        - Set to 1 (default) to use Ultralytics for model loading"
     echo "                           Set to 0 to use basic PyTorch loading instead"
+    echo "  USE_BACKUP_MODEL       - Set to 1 to use backup detection (fixed patterns)"
+    echo "                           Set to 0 (default) to use actual model loading"
     echo ""
     echo "Examples:"
     echo "  docker run --gpus all nudenet-gpu"
     echo "  docker run --gpus all nudenet-gpu detect 640m /path/to/image.jpg"
     echo "  docker run --gpus all nudenet-gpu benchmark 320n"
     echo "  docker run --gpus all nudenet-gpu benchmark 640m /path/to/image.jpg 20"
+    echo "  docker run --gpus all -e USE_BACKUP_MODEL=1 nudenet-gpu benchmark"
     echo ""
     # Pass through any other command
     exec "$@"

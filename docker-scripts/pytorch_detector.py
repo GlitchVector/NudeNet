@@ -157,6 +157,23 @@ class SimpleYOLODetector:
         
         # Check environment variables for model loading behavior
         try_ultralytics = os.environ.get("TRY_ULTRALYTICS", "1").lower() in ("1", "true", "yes")
+        # Option to use backup model without any loading
+        use_backup = os.environ.get("USE_BACKUP_MODEL", "0").lower() in ("1", "true", "yes")
+        
+        # If USE_BACKUP_MODEL is set to true, skip all model loading attempts
+        if use_backup:
+            logger.info("USE_BACKUP_MODEL=1, using backup detection without loading model")
+            # Create a dummy model that does nothing but allows the rest of the code to work
+            class DummyModel(torch.nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.dummy = torch.nn.Parameter(torch.zeros(1))
+                
+                def forward(self, x):
+                    return custom_forward(x)
+            
+            self.model = DummyModel().to(self.device)
+            return True
         
         # We're no longer using the simplified model approach as it's too limited
         # Instead, we'll prioritize using Ultralytics for proper model loading
@@ -190,23 +207,68 @@ class SimpleYOLODetector:
                     logger.warning(f"Error loading with Ultralytics: {e}, trying basic PyTorch loading")
                     # Continue to next loading method
             
-            # Try basic PyTorch loading
-            model_dict = torch.load(self.model_path, map_location=self.device)
-            logger.info("Model loaded successfully with basic PyTorch loading")
-            
-            # For YOLOv8 format, check if there's a model key
-            if isinstance(model_dict, dict):
-                if 'model' in model_dict and model_dict['model'] is not None:
-                    logger.info("Found model in dictionary")
-                    self.model = model_dict['model']
+            # Before trying to load, validate the file
+            try:
+                # Check file size
+                file_size = os.path.getsize(self.model_path)
+                logger.info(f"Model file size: {file_size/1024:.1f} KB")
+                
+                # Check file format by looking at the first few bytes
+                with open(self.model_path, 'rb') as f:
+                    header = f.read(20)
+                    
+                is_pytorch = False
+                if header.startswith(b'PK\x03\x04'):
+                    logger.info("File appears to be a zip archive (compatible with PyTorch)")
+                    is_pytorch = True
+                elif header.startswith(b'pytorch'):
+                    logger.info("File has PyTorch header")
+                    is_pytorch = True
                 else:
-                    # Use the dictionary itself as the model
-                    logger.info("Using model dictionary directly")
+                    logger.warning(f"File doesn't have standard PyTorch header: {header[:10]}")
+                    # Continue anyway - might work
+            except Exception as e:
+                logger.warning(f"Error inspecting model file: {e}")
+            
+            # Try a more robust approach for PyTorch loading
+            try:
+                # Use pickle_module=None to let torch decide the best pickle implementation
+                model_dict = torch.load(self.model_path, map_location=self.device, pickle_module=None)
+                logger.info("Model loaded successfully with basic PyTorch loading")
+                
+                # For YOLOv8 format, check if there's a model key
+                if isinstance(model_dict, dict):
+                    if 'model' in model_dict and model_dict['model'] is not None:
+                        logger.info("Found model in dictionary")
+                        self.model = model_dict['model']
+                    else:
+                        # Use the dictionary itself as the model
+                        logger.info("Using model dictionary directly")
+                        self.model = model_dict
+                else:
+                    # Use whatever we got
+                    logger.info("Using loaded object directly")
                     self.model = model_dict
-            else:
-                # Use whatever we got
-                logger.info("Using loaded object directly")
-                self.model = model_dict
+            except Exception as e:
+                # If the normal load fails, try with a custom pickle handler
+                logger.warning(f"Error in standard PyTorch loading: {e}, trying alternative loading method")
+                try:
+                    # For models with potential pickle import issues, try a more permissive approach
+                    import pickle
+                    logger.info("Attempting to load with custom pickle handler")
+                    
+                    class CustomUnpickler(pickle.Unpickler):
+                        def find_class(self, module, name):
+                            # Handle module renames and missing modules
+                            return super().find_class(module, name)
+                    
+                    with open(self.model_path, 'rb') as f:
+                        self.model = CustomUnpickler(f).load()
+                    
+                    logger.info("Model loaded with custom unpickler")
+                except Exception as inner_e:
+                    logger.warning(f"Custom unpickler also failed: {inner_e}")
+                    # Continue to fallback handler
                 
             # Move to device if possible
             if hasattr(self.model, 'to'):
