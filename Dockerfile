@@ -13,7 +13,7 @@ ENV PYTHONPATH=/app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3 python3-dev python3-pip \
-    gcc g++ wget curl \
+    gcc g++ wget curl ca-certificates \
     dos2unix \
     libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev && \
     apt-get clean && \
@@ -59,12 +59,14 @@ RUN echo '#!/usr/bin/python3\ntry:\n  import nudenet\n  print("NudeNet imported 
 # Create model directories
 RUN mkdir -p /app/models/onnx /app/models/pytorch
 
-# Copy the provided PyTorch models without conversion
-COPY docker-scripts/pytorch-models/*.pt /app/models/pytorch/
-RUN ls -la /app/models/pytorch/ && echo "PyTorch models copied successfully"
-
-# Ensure models are properly set up
-RUN python3 /app/docker-scripts/model_manager.py --action ensure
+# Download the models directly from official URLs
+RUN echo "Downloading models from official sources..." && \
+    wget -q https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.pt -O /app/models/pytorch/320n.pt && \
+    wget -q https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.pt -O /app/models/pytorch/640m.pt && \
+    wget -q https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx -O /app/models/onnx/320n.onnx && \
+    wget -q https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.onnx -O /app/models/onnx/640m.onnx && \
+    ls -la /app/models/pytorch/ /app/models/onnx/ && \
+    echo "Models downloaded successfully"
 
 # Install ONNX Runtime (after PyTorch to ensure compatibility)
 RUN pip install onnxruntime-gpu

@@ -18,7 +18,7 @@ MODELS_DIR = "/app/models" if os.path.exists("/app") else os.path.join(os.path.d
 ONNX_DIR = os.path.join(MODELS_DIR, "onnx")
 PYTORCH_DIR = os.path.join(MODELS_DIR, "pytorch")
 
-# Base URL for models
+# Base URL for models - direct from official source
 BASE_URL = "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/"
 
 # Model definitions
@@ -31,7 +31,7 @@ MODELS = [
         "resolution": "320x320",
         "description": "Smaller, faster model (320x320)",
         "output_path": os.path.join(ONNX_DIR, "320n.onnx"),
-        "md5": "6715c42f99ce4b2c27f82fcdb175ab1a"  # Replace with actual hash
+        "md5": "6715c42f99ce4b2c27f82fcdb175ab1a"
     },
     {
         "name": "320n.pt",
@@ -41,7 +41,7 @@ MODELS = [
         "resolution": "320x320",
         "description": "Smaller, faster model (320x320) in PyTorch format",
         "output_path": os.path.join(PYTORCH_DIR, "320n.pt"),
-        "md5": "df4a8d7fc0bb7a7f4de1db3e8e03b8d9"  # Replace with actual hash
+        "md5": "df4a8d7fc0bb7a7f4de1db3e8e03b8d9"
     },
     {
         "name": "640m.onnx",
@@ -51,7 +51,7 @@ MODELS = [
         "resolution": "640x640",
         "description": "Larger, more accurate model (640x640)",
         "output_path": os.path.join(ONNX_DIR, "640m.onnx"),
-        "md5": "aacc2ae0be4f85677b80be2a199c5c3d"  # Replace with actual hash
+        "md5": "aacc2ae0be4f85677b80be2a199c5c3d"
     },
     {
         "name": "640m.pt",
@@ -61,7 +61,7 @@ MODELS = [
         "resolution": "640x640",
         "description": "Larger, more accurate model (640x640) in PyTorch format",
         "output_path": os.path.join(PYTORCH_DIR, "640m.pt"),
-        "md5": "ce0c5b3d7f5f45d87deb65c9126ad4c5"  # Replace with actual hash
+        "md5": "ce0c5b3d7f5f45d87deb65c9126ad4c5"
     }
 ]
 

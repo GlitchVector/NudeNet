@@ -57,7 +57,7 @@ This Docker environment uses:
 - PyTorch 2.0.1 with CUDA support
 - Minimal dependencies for maximum performance
 - Simple PyTorch model loading without conversion
-- Pre-included 320n and 640m models
+- Automatically downloads official 320n and 640m models directly from the source
 
 The main detector (`pytorch_detector.py`) directly loads PyTorch models and provides multiple mechanisms to ensure detection works even when model loading fails.
 
