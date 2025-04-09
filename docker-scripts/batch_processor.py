@@ -80,6 +80,24 @@ def process_image_batch(detector, image_paths):
     
     return results
 
+def print_progress(current, total, elapsed, json_format=False):
+    """Print progress information in plain text or JSON format"""
+    if json_format:
+        progress_data = {
+            "type": "progress",
+            "current": current,
+            "total": total,
+            "percent": round(current/total*100, 1) if total > 0 else 0,
+            "elapsed_seconds": round(elapsed, 2),
+            "images_per_second": round(current/elapsed, 2) if elapsed > 0 else 0,
+            "estimated_remaining": round((total-current) / (current/elapsed) if current > 0 and elapsed > 0 else 0, 2)
+        }
+        print(json.dumps(progress_data), flush=True)
+    else:
+        images_per_sec = current / elapsed if elapsed > 0 else 0
+        print(f"Progress: {current}/{total} images processed "
+              f"({current/total*100:.1f}%, {images_per_sec:.2f} images/sec)")
+
 def main():
     parser = argparse.ArgumentParser(description='Process images listed in a JSON file with NudeNet')
     parser.add_argument('input_json', help='JSON file containing list of image paths')
@@ -87,13 +105,19 @@ def main():
     parser.add_argument('--batch-size', '-b', type=int, default=16,
                         help='Number of images to process in each batch (default: 16)')
     parser.add_argument('--model', '-m', help='Path to model file (default: use built-in model)')
+    parser.add_argument('--json-progress', action='store_true',
+                        help='Output progress information in JSON format')
     
     args = parser.parse_args()
     
     # Check input file exists
     input_json_path = Path(args.input_json)
     if not input_json_path.exists():
-        print(f"Error: Input file {args.input_json} does not exist")
+        error_msg = f"Error: Input file {args.input_json} does not exist"
+        if args.json_progress:
+            print(json.dumps({"type": "error", "message": error_msg}), flush=True)
+        else:
+            print(error_msg)
         return 1
     
     # Load list of image paths from JSON
@@ -133,18 +157,37 @@ def main():
         return 1
     
     if not image_paths:
-        print("No image paths found in the input JSON")
+        error_msg = "No image paths found in the input JSON"
+        if args.json_progress:
+            print(json.dumps({"type": "error", "message": error_msg}), flush=True)
+        else:
+            print(error_msg)
         return 1
     
-    print(f"Found {len(image_paths)} images to process")
+    # Print startup information
+    if args.json_progress:
+        print(json.dumps({
+            "type": "start",
+            "total_images": len(image_paths),
+            "batch_size": args.batch_size,
+            "input": args.input_json,
+            "output": args.output
+        }), flush=True)
+    else:
+        print(f"Found {len(image_paths)} images to process")
     
     # Initialize NudeDetector
     detector_args = {}
     if args.model:
         detector_args['model_path'] = args.model
     
-    print("Initializing NudeDetector...")
+    if not args.json_progress:
+        print("Initializing NudeDetector...")
+    
     detector = NudeDetector(**detector_args)
+    
+    if args.json_progress:
+        print(json.dumps({"type": "initialized"}), flush=True)
     
     # Process images in batches
     results = {}
@@ -163,25 +206,40 @@ def main():
         # Update progress
         processed_images += len(batch)
         elapsed = time.time() - start_time
-        images_per_sec = processed_images / elapsed if elapsed > 0 else 0
-        print(f"Progress: {processed_images}/{total_images} images processed "
-              f"({processed_images/total_images*100:.1f}%, {images_per_sec:.2f} images/sec)")
+        
+        # Print progress in appropriate format
+        if processed_images % 5 == 0 or processed_images == total_images:  # Report every 5 images
+            print_progress(processed_images, total_images, elapsed, args.json_progress)
     
     # Save results
-    print(f"Saving results to {args.output}")
+    if not args.json_progress:
+        print(f"Saving results to {args.output}")
+    
     with open(args.output, 'w') as f:
         json.dump(results, f, indent=2)
     
-    # Print summary
+    # Calculate summary statistics
     total_time = time.time() - start_time
     success_count = sum(1 for _, r in results.items() if r.get('success', False))
     error_count = sum(1 for _, r in results.items() if not r.get('success', False))
     
-    print(f"\nSummary:")
-    print(f"Total processing time: {total_time:.2f} seconds")
-    print(f"Average time per image: {total_time/total_images:.4f} seconds")
-    print(f"Images processed successfully: {success_count}")
-    print(f"Images with errors: {error_count}")
+    # Print summary in appropriate format
+    if args.json_progress:
+        print(json.dumps({
+            "type": "complete",
+            "total_images": total_images,
+            "processed_successfully": success_count,
+            "errors": error_count,
+            "total_time_seconds": round(total_time, 2),
+            "average_time_per_image": round(total_time/total_images, 4) if total_images > 0 else 0,
+            "output_file": args.output
+        }), flush=True)
+    else:
+        print(f"\nSummary:")
+        print(f"Total processing time: {total_time:.2f} seconds")
+        print(f"Average time per image: {total_time/total_images:.4f} seconds")
+        print(f"Images processed successfully: {success_count}")
+        print(f"Images with errors: {error_count}")
     
     return 0
 

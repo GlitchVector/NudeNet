@@ -9,8 +9,24 @@ show_usage() {
   echo "  * Process batch from JSON:   docker run --gpus all nudenet-gpu --batch /path/to/images.json --output /path/to/results.json"
   echo "  * Run GPU test:              docker run --gpus all nudenet-gpu --test-gpu"
   echo ""
+  echo "Batch processing options:"
+  echo "  --batch <json_file>          JSON file containing list of image paths"
+  echo "  --output, -o <file>          Output JSON file for results"
+  echo "  --batch-size, -b <num>       Number of images to process in each batch (default: 16)"
+  echo "  --model, -m <file>           Path to alternative model file"
+  echo "  --json-progress              Output progress information in JSON format"
+  echo ""
   echo "Note: If Docker cannot access your files, you may need to add volume mounts:"
   echo "  docker run --gpus all -v /some/path:/some/path nudenet-gpu --batch /some/path/images.json --output /some/path/results.json"
+  echo ""
+  echo "JSON Progress Format (when using --json-progress):"
+  echo "  The script will output JSON objects with progress information."
+  echo "  Each object will have a 'type' field indicating the event type:"
+  echo "  - 'start': Beginning of processing with total image count"
+  echo "  - 'initialized': Model initialized and ready"
+  echo "  - 'progress': Regular progress updates"
+  echo "  - 'complete': Final summary with statistics"
+  echo "  - 'error': Error message"
   echo ""
   echo "Results will be printed to stdout for individual images or saved to the specified output file for batch processing"
 }
@@ -54,6 +70,7 @@ if [ "$1" = "--batch" ]; then
   OUTPUT_FILE=""
   BATCH_SIZE=16
   MODEL_PATH=""
+  JSON_PROGRESS=false
   
   shift 2  # Skip the --batch and input file arguments
   
@@ -72,6 +89,10 @@ if [ "$1" = "--batch" ]; then
         # Convert Windows path to Linux path if needed
         MODEL_PATH=$(convert_windows_path "$2")
         shift 2
+        ;;
+      --json-progress)
+        JSON_PROGRESS=true
+        shift
         ;;
       *)
         echo "Unknown option: $1"
@@ -94,6 +115,10 @@ if [ "$1" = "--batch" ]; then
   ARGS="--batch-size $BATCH_SIZE"
   if [ ! -z "$MODEL_PATH" ]; then
     ARGS="$ARGS --model $MODEL_PATH"
+  fi
+  
+  if [ "$JSON_PROGRESS" = true ]; then
+    ARGS="$ARGS --json-progress"
   fi
   
   python3 /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
