@@ -40,7 +40,10 @@ COPY ./docker-scripts/models/640m.pt /app/models/
 COPY ./docker-scripts/entrypoint.sh /app/entrypoint.sh
 COPY ./docker-scripts/test_gpu.py /app/test_gpu.py
 COPY ./docker-scripts/cory_chase.jpeg /app/docker-scripts/cory_chase.jpeg
-RUN chmod +x /app/entrypoint.sh /app/test_gpu.py
+
+# Fix line endings and make scripts executable
+RUN sed -i 's/\r$//' /app/entrypoint.sh /app/test_gpu.py && \
+    chmod +x /app/entrypoint.sh /app/test_gpu.py
 
 # Install dependencies with specific versions
 RUN pip3 install --no-cache-dir "numpy<2.0.0" opencv-python-headless
@@ -60,7 +63,7 @@ ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 ENV CUDA_LAUNCH_BLOCKING=1
 
 # Add Python path to include the current directory
-ENV PYTHONPATH "/app:${PYTHONPATH}"
+ENV PYTHONPATH=/app
 
 # Set entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]

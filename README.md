@@ -1,4 +1,4 @@
-**Looking for contributors/ maintainers for this repo**: 
+**Looking for contributors/ maintainers for this repo**:
 I have become busy with other stuff in the last years, still trying to maintain this repo as it is the current best OSS option for nudity detection,
 Looking for interested mainttainer, who can add/ work on more features for this repo (with my help of course)
 
@@ -26,10 +26,10 @@ detector.detect_batch(['image_1.jpg', 'image_2.jpg']) # Returns list of [list of
 
 #### Available models
 
-| Model | resolution trained | based on | onnx link | pytorch link |
-| --- | --- | --- | --- | -- |
-| 320n | 320x320 | ultralytics yolov8n | [link](https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx) | [link](https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.pt)
-| 640m | 640x640 | ultralytics yolov8m | [link](https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.onnx) | [link](https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.pt)
+| Model | resolution trained | based on            | onnx link                                                                              | pytorch link                                                                         |
+| ----- | ------------------ | ------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 320n  | 320x320            | ultralytics yolov8n | [link](https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx) | [link](https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.pt) |
+| 640m  | 640x640            | ultralytics yolov8m | [link](https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.onnx) | [link](https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.pt) |
 
 ```python
 # To use the 640m model, download the onnx file and pass the path to the model_path argument
@@ -38,7 +38,6 @@ detector = NudeDetector(model_path="downloaded_640m.onnx path", inference_resolu
 ```
 
 - 320n is the default model and is included in the `nudenet` python package by default
-
 
 ```python
 detection_example = [
@@ -80,8 +79,12 @@ all_labels = [
 ]
 ```
 
-
 ### Docker
+
+```bash
+  docker build -f docker-scripts/Dockerfile -t nudenet-gpu .
+  docker run --gpus all nudenet-gpu --test-gpu
+```
 
 ```bash
 docker run -it -p8080:8080 ghcr.io/notai-tech/nudenet:latest
@@ -94,4 +97,5 @@ curl -F f1=@"images.jpeg" "http://localhost:8080/infer"
 ```
 
 #### Some interesting projects based on NudeNet
+
 1 - by https://github.com/w-e-w, censor extension ps://github.com/notAI-tech/NudeNet/issues/131
