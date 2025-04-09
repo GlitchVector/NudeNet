@@ -41,7 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies
 RUN pip3 install --no-cache-dir "numpy<2.0.0" opencv-python-headless && \
     pip3 install --no-cache-dir torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118 && \
-    pip3 install --no-cache-dir ultralytics onnxruntime-gpu
+    pip3 install --no-cache-dir ultralytics onnxruntime-gpu && \
+    pip3 install --no-cache-dir psutil
 
 # Stage 2: Core NudeNet with models
 FROM base AS nudenet-core

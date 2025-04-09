@@ -15,6 +15,8 @@ show_usage() {
   echo "  --batch-size, -b <num>       Number of images to process in each batch (default: 16)"
   echo "  --model, -m <file>           Path to alternative model file"
   echo "  --json-progress              Output progress information in JSON format"
+  echo "  --memory-warning <percent>   Memory usage threshold for warnings (default: 85.0)"
+  echo "  --memory-limit <percent>     Memory usage threshold to abort processing (default: 95.0)"
   echo ""
   echo "Note: If Docker cannot access your files, you may need to add volume mounts:"
   echo "  docker run --gpus all -v /some/path:/some/path nudenet-gpu --batch /some/path/images.json --output /some/path/results.json"
@@ -24,7 +26,8 @@ show_usage() {
   echo "  Each object will have a 'type' field indicating the event type:"
   echo "  - 'start': Beginning of processing with total image count"
   echo "  - 'initialized': Model initialized and ready"
-  echo "  - 'progress': Regular progress updates"
+  echo "  - 'progress': Regular progress updates with memory usage"
+  echo "  - 'warning': Memory usage warning"
   echo "  - 'complete': Final summary with statistics"
   echo "  - 'error': Error message"
   echo ""
@@ -71,6 +74,8 @@ if [ "$1" = "--batch" ]; then
   BATCH_SIZE=16
   MODEL_PATH=""
   JSON_PROGRESS=false
+  MEMORY_WARNING=85.0
+  MEMORY_LIMIT=95.0
   
   shift 2  # Skip the --batch and input file arguments
   
@@ -93,6 +98,14 @@ if [ "$1" = "--batch" ]; then
       --json-progress)
         JSON_PROGRESS=true
         shift
+        ;;
+      --memory-warning)
+        MEMORY_WARNING="$2"
+        shift 2
+        ;;
+      --memory-limit)
+        MEMORY_LIMIT="$2"
+        shift 2
         ;;
       *)
         echo "Unknown option: $1"
@@ -120,6 +133,9 @@ if [ "$1" = "--batch" ]; then
   if [ "$JSON_PROGRESS" = true ]; then
     ARGS="$ARGS --json-progress"
   fi
+  
+  # Add memory management parameters
+  ARGS="$ARGS --memory-warning $MEMORY_WARNING --memory-limit $MEMORY_LIMIT"
   
   python3 /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
   exit $?

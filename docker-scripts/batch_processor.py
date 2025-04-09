@@ -10,6 +10,7 @@ import sys
 import json
 import time
 import argparse
+import psutil
 from pathlib import Path, PurePath
 from nudenet import NudeDetector
 
@@ -35,13 +36,42 @@ def normalize_path(path):
     # If not a Windows path or no drive letter, return as is
     return path
 
-def process_image_batch(detector, image_paths):
+# Global detector instance cache
+DETECTOR_INSTANCE = None
+
+def get_detector(model_path=None):
+    """Get or initialize the detector instance (singleton pattern)"""
+    global DETECTOR_INSTANCE
+    if DETECTOR_INSTANCE is None:
+        # Initialize detector with the specified model
+        detector_args = {}
+        if model_path:
+            detector_args['model_path'] = model_path
+        DETECTOR_INSTANCE = NudeDetector(**detector_args)
+    return DETECTOR_INSTANCE
+
+def check_memory_usage(threshold=90.0):
+    """
+    Check memory usage and return True if it's above the threshold.
+    """
+    # Get virtual memory usage
+    vm = psutil.virtual_memory()
+    percent_used = vm.percent
+    return percent_used > threshold
+
+def process_image_batch(image_paths):
     """Process a batch of images and return results"""
     results = {}
     # Normalize paths for Docker environment
     normalized_paths = {path: normalize_path(path) for path in image_paths}
     
     try:
+        # Get the detector instance
+        detector = get_detector()
+        
+        # Check memory before processing
+        memory_before = psutil.virtual_memory().percent
+        
         # Process a batch of images with NudeDetector
         start_time = time.time()
         detections_batch = detector.detect_batch([normalized_paths[p] for p in image_paths])
@@ -65,6 +95,7 @@ def process_image_batch(detector, image_paths):
         print(f"Batch processing failed: {str(e)}. Falling back to individual processing.")
         for path in image_paths:
             try:
+                detector = get_detector()
                 start_time = time.time()
                 detections = detector.detect(normalized_paths[path])
                 
@@ -78,10 +109,27 @@ def process_image_batch(detector, image_paths):
                     'success': False
                 }
     
+    # Check memory after processing
+    memory_after = psutil.virtual_memory().percent
+    memory_change = memory_after - memory_before
+    
+    # Add memory warning if usage is high
+    if check_memory_usage(threshold=85.0):
+        print(f"Warning: High memory usage detected ({memory_after:.1f}%). Consider reducing batch size.", 
+              file=sys.stderr)
+    
     return results
 
 def print_progress(current, total, elapsed, json_format=False):
     """Print progress information in plain text or JSON format"""
+    # Get memory information
+    vm = psutil.virtual_memory()
+    memory_info = {
+        "memory_percent": round(vm.percent, 1),
+        "memory_used_gb": round(vm.used / (1024**3), 2),
+        "memory_total_gb": round(vm.total / (1024**3), 2)
+    }
+    
     if json_format:
         progress_data = {
             "type": "progress",
@@ -92,11 +140,15 @@ def print_progress(current, total, elapsed, json_format=False):
             "images_per_second": round(current/elapsed, 2) if elapsed > 0 else 0,
             "estimated_remaining": round((total-current) / (current/elapsed) if current > 0 and elapsed > 0 else 0, 2)
         }
+        # Add memory information
+        progress_data.update(memory_info)
         print(json.dumps(progress_data), flush=True)
     else:
         images_per_sec = current / elapsed if elapsed > 0 else 0
         print(f"Progress: {current}/{total} images processed "
               f"({current/total*100:.1f}%, {images_per_sec:.2f} images/sec)")
+        print(f"Memory usage: {memory_info['memory_percent']}% - "
+              f"{memory_info['memory_used_gb']}GB / {memory_info['memory_total_gb']}GB")
 
 def main():
     parser = argparse.ArgumentParser(description='Process images listed in a JSON file with NudeNet')
@@ -107,6 +159,10 @@ def main():
     parser.add_argument('--model', '-m', help='Path to model file (default: use built-in model)')
     parser.add_argument('--json-progress', action='store_true',
                         help='Output progress information in JSON format')
+    parser.add_argument('--memory-warning', type=float, default=85.0,
+                        help='Memory usage percentage at which to issue warnings (default: 85.0)')
+    parser.add_argument('--memory-limit', type=float, default=95.0,
+                        help='Memory usage percentage at which to abort processing (default: 95.0)')
     
     args = parser.parse_args()
     
@@ -164,27 +220,42 @@ def main():
             print(error_msg)
         return 1
     
+    # Get memory information
+    vm = psutil.virtual_memory()
+    memory_info = {
+        "memory_percent": round(vm.percent, 1),
+        "memory_used_gb": round(vm.used / (1024**3), 2),
+        "memory_total_gb": round(vm.total / (1024**3), 2)
+    }
+    
     # Print startup information
     if args.json_progress:
-        print(json.dumps({
+        start_info = {
             "type": "start",
             "total_images": len(image_paths),
             "batch_size": args.batch_size,
             "input": args.input_json,
-            "output": args.output
-        }), flush=True)
+            "output": args.output,
+            "memory_warning_threshold": args.memory_warning,
+            "memory_limit_threshold": args.memory_limit
+        }
+        # Add memory information
+        start_info.update(memory_info)
+        print(json.dumps(start_info), flush=True)
     else:
         print(f"Found {len(image_paths)} images to process")
+        print(f"Memory usage: {memory_info['memory_percent']}% - "
+              f"{memory_info['memory_used_gb']}GB / {memory_info['memory_total_gb']}GB")
     
-    # Initialize NudeDetector
-    detector_args = {}
-    if args.model:
-        detector_args['model_path'] = args.model
-    
+    # Initialize NudeDetector as a singleton
     if not args.json_progress:
-        print("Initializing NudeDetector...")
+        print("Initializing NudeDetector (cached instance)...")
     
-    detector = NudeDetector(**detector_args)
+    # Initialize or get cached detector
+    if args.model:
+        detector = get_detector(model_path=args.model)
+    else:
+        detector = get_detector()
     
     if args.json_progress:
         print(json.dumps({"type": "initialized"}), flush=True)
@@ -197,10 +268,23 @@ def main():
     
     # Process in batches
     for i in range(0, len(image_paths), args.batch_size):
+        # Check if memory usage is above limit before processing batch
+        if check_memory_usage(threshold=args.memory_limit):
+            error_msg = f"Memory usage exceeded limit ({psutil.virtual_memory().percent:.1f}% > {args.memory_limit}%). Aborting processing."
+            if args.json_progress:
+                print(json.dumps({
+                    "type": "error", 
+                    "message": error_msg,
+                    "memory_percent": psutil.virtual_memory().percent
+                }), flush=True)
+            else:
+                print(f"ERROR: {error_msg}", file=sys.stderr)
+            return 1
+            
         batch = image_paths[i:i + args.batch_size]
         
-        # Process batch
-        batch_results = process_image_batch(detector, batch)
+        # Process batch (uses cached detector internally)
+        batch_results = process_image_batch(batch)
         results.update(batch_results)
         
         # Update progress
@@ -210,6 +294,18 @@ def main():
         # Print progress in appropriate format
         if processed_images % 5 == 0 or processed_images == total_images:  # Report every 5 images
             print_progress(processed_images, total_images, elapsed, args.json_progress)
+            
+        # Check if memory usage is above warning threshold
+        if check_memory_usage(threshold=args.memory_warning):
+            warn_msg = f"High memory usage detected ({psutil.virtual_memory().percent:.1f}%). Consider reducing batch size."
+            if args.json_progress:
+                print(json.dumps({
+                    "type": "warning", 
+                    "message": warn_msg,
+                    "memory_percent": psutil.virtual_memory().percent
+                }), flush=True)
+            else:
+                print(f"WARNING: {warn_msg}", file=sys.stderr)
     
     # Save results
     if not args.json_progress:
@@ -223,9 +319,17 @@ def main():
     success_count = sum(1 for _, r in results.items() if r.get('success', False))
     error_count = sum(1 for _, r in results.items() if not r.get('success', False))
     
+    # Get final memory information
+    vm = psutil.virtual_memory()
+    memory_info = {
+        "memory_percent": round(vm.percent, 1),
+        "memory_used_gb": round(vm.used / (1024**3), 2),
+        "memory_total_gb": round(vm.total / (1024**3), 2)
+    }
+    
     # Print summary in appropriate format
     if args.json_progress:
-        print(json.dumps({
+        complete_data = {
             "type": "complete",
             "total_images": total_images,
             "processed_successfully": success_count,
@@ -233,13 +337,19 @@ def main():
             "total_time_seconds": round(total_time, 2),
             "average_time_per_image": round(total_time/total_images, 4) if total_images > 0 else 0,
             "output_file": args.output
-        }), flush=True)
+        }
+        # Add memory information
+        complete_data.update(memory_info)
+        
+        print(json.dumps(complete_data), flush=True)
     else:
         print(f"\nSummary:")
         print(f"Total processing time: {total_time:.2f} seconds")
         print(f"Average time per image: {total_time/total_images:.4f} seconds")
         print(f"Images processed successfully: {success_count}")
         print(f"Images with errors: {error_count}")
+        print(f"Final memory usage: {memory_info['memory_percent']}% - "
+              f"{memory_info['memory_used_gb']}GB / {memory_info['memory_total_gb']}GB")
     
     return 0
 
