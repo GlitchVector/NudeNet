@@ -60,6 +60,9 @@ RUN mkdir -p /app/models/onnx /app/models/pytorch
 COPY docker-scripts/pytorch-models/*.pt /app/models/pytorch/
 RUN ls -la /app/models/pytorch/ && echo "PyTorch models copied successfully"
 
+# Test PyTorch models with simplified detector
+RUN cd /app && python3 -c "import sys; sys.path.append('/app/docker-scripts'); from simple_pytorch_detector import SimpleYOLODetector; model = SimpleYOLODetector('/app/models/pytorch/320n.pt'); print('PyTorch model test successful')"
+
 # Install ONNX Runtime (after PyTorch to ensure compatibility)
 RUN pip install onnxruntime-gpu
 
