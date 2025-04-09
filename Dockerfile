@@ -68,9 +68,11 @@ RUN cd /app && python3 /app/docker-scripts/yolov8_converter.py --input "/app/mod
 
 # Set up environment variables for GPU
 ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+ENV CUDA_VISIBLE_DEVICES=0
 
 # Set logging level to show GPU-related info
-ENV ONNXRUNTIME_LOG_LEVEL=INFO
+ENV ONNXRUNTIME_LOG_LEVEL=0
+ENV ONNX_BACKEND=CUDAExecutionProvider
 
 ENTRYPOINT ["/bin/bash", "/app/docker-scripts/entrypoint.sh"]

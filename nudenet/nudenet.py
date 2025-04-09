@@ -150,12 +150,18 @@ class NudeDetector:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
-        # Set up GPU providers
+        # For Docker containers with explicit CUDA versions
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use the first GPU
+        os.environ["OMP_NUM_THREADS"] = "1"  # Avoid CPU thread competition
+        os.environ["ONNX_BACKEND"] = "CUDAExecutionProvider"  # Force CUDA as backend
+        onnxruntime.set_default_logger_severity(0)  # Set to verbose logging
+        
+        # Set up GPU providers with more aggressive settings
         gpu_providers = [
             ('CUDAExecutionProvider', {
                 'device_id': 0,
                 'arena_extend_strategy': 'kNextPowerOfTwo',
-                'gpu_mem_limit': 2 * 1024 * 1024 * 1024,
+                'gpu_mem_limit': 4 * 1024 * 1024 * 1024,  # 4GB
                 'cudnn_conv_algo_search': 'EXHAUSTIVE',
                 'do_copy_in_default_stream': True,
             }),
@@ -163,9 +169,13 @@ class NudeDetector:
             'CPUExecutionProvider'
         ]
         
-        # For Docker containers with explicit CUDA versions
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use the first GPU
-        onnxruntime.set_default_logger_severity(0)  # Set to verbose logging
+        # Try loading CUDA libraries directly to ensure they're found
+        try:
+            import ctypes
+            ctypes.CDLL("libcudart.so")
+            self.logger.info("Successfully loaded CUDA runtime library")
+        except Exception as e:
+            self.logger.warning(f"Could not load CUDA runtime library: {e}")
         
         try:
             # Try to use GPU providers by default
