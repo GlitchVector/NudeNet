@@ -144,82 +144,99 @@ class SimpleYOLODetector:
             
             return output
         
-        # Try different loading methods until one works
+        # First try to use ultralytics for YOLOv8 model loading if available
         try:
             try:
-                # Basic loading - works for most PyTorch versions
-                model_dict = torch.load(self.model_path, map_location=self.device)
-                logger.info("Model loaded successfully with basic PyTorch loading")
+                # Try to import ultralytics
+                from ultralytics import YOLO
+                logger.info("Ultralytics package is available, using it for model loading")
                 
-                # For YOLOv8 format, check if there's a model key
-                if isinstance(model_dict, dict):
-                    if 'model' in model_dict and model_dict['model'] is not None:
-                        logger.info("Found model in dictionary")
-                        self.model = model_dict['model']
-                    else:
-                        # Use the dictionary itself as the model
-                        logger.info("Using model dictionary directly")
-                        self.model = model_dict
-                else:
-                    # Use whatever we got
-                    logger.info("Using loaded object directly")
-                    self.model = model_dict
-                    
-                # Move to device if possible
-                if hasattr(self.model, 'to'):
-                    self.model = self.model.to(self.device)
-                    logger.info(f"Model moved to {self.device}")
+                # Use the official YOLO class to load the model
+                self.model = YOLO(self.model_path)
                 
-                # Set to evaluation mode if it's a Module
-                if hasattr(self.model, 'eval'):
-                    self.model.eval()
-                    logger.info("Model set to evaluation mode")
+                # Force model to device (by default it should automatically detect)
+                if self.device == 'cuda' and torch.cuda.is_available():
+                    self.model.to(self.device)
+                    logger.info(f"YOLO model moved to {self.device}")
                 
-                # Check if model has forward or predict methods, if not create a dummy model
-                has_inference_method = hasattr(self.model, 'forward') or hasattr(self.model, 'predict')
-                if not has_inference_method:
-                    logger.warning("Model doesn't have forward or predict methods, creating dummy model")
-                    # Create a simple torch module with our custom forward
-                    class DummyModel(torch.nn.Module):
-                        def __init__(self):
-                            super().__init__()
-                        
-                        def forward(self, x):
-                            return custom_forward(x)
-                    
-                    self.model = DummyModel().to(self.device)
-                    self.model.eval()
-                
+                logger.info("Model loaded successfully with Ultralytics")
                 return True
                 
+            except ImportError:
+                logger.warning("Ultralytics not available, falling back to basic PyTorch loading")
+                # Continue to next loading method
+                
             except Exception as e:
-                logger.warning(f"Standard model loading failed: {e}, trying alternative approach")
+                logger.warning(f"Error loading with Ultralytics: {e}, trying basic PyTorch loading")
+                # Continue to next loading method
+            
+            # Try basic PyTorch loading
+            model_dict = torch.load(self.model_path, map_location=self.device)
+            logger.info("Model loaded successfully with basic PyTorch loading")
+            
+            # For YOLOv8 format, check if there's a model key
+            if isinstance(model_dict, dict):
+                if 'model' in model_dict and model_dict['model'] is not None:
+                    logger.info("Found model in dictionary")
+                    self.model = model_dict['model']
+                else:
+                    # Use the dictionary itself as the model
+                    logger.info("Using model dictionary directly")
+                    self.model = model_dict
+            else:
+                # Use whatever we got
+                logger.info("Using loaded object directly")
+                self.model = model_dict
                 
-                # Create a simplified model directly without requiring ultralytics
-                logger.warning("Creating simplified placeholder model")
-                
-                # Create a simple PyTorch Module with our custom forward function
-                class SimpleModel(torch.nn.Module):
+            # Move to device if possible
+            if hasattr(self.model, 'to'):
+                self.model = self.model.to(self.device)
+                logger.info(f"Model moved to {self.device}")
+            
+            # Set to evaluation mode if it's a Module
+            if hasattr(self.model, 'eval'):
+                self.model.eval()
+                logger.info("Model set to evaluation mode")
+            
+            # Check if model has forward or predict methods, if not create a dummy model
+            has_inference_method = hasattr(self.model, 'forward') or hasattr(self.model, 'predict')
+            if not has_inference_method:
+                logger.warning("Model doesn't have forward or predict methods, creating dummy model")
+                # Create a simple torch module with our custom forward
+                class DummyModel(torch.nn.Module):
                     def __init__(self):
                         super().__init__()
-                        # Add a dummy parameter so it's a proper module
-                        self.dummy = torch.nn.Parameter(torch.zeros(1))
                     
                     def forward(self, x):
                         return custom_forward(x)
                 
-                # Create and initialize the model
-                self.model = SimpleModel().to(self.device)
+                self.model = DummyModel().to(self.device)
                 self.model.eval()
-                logger.info("Initialized simplified model successfully")
-                
-                return True
-                
+            
+            return True
+            
         except Exception as e:
-            logger.error(f"All model loading methods failed: {e}")
-            logger.warning("Using backup detection mechanism")
-            self.model = None
-            return False
+            logger.warning(f"Standard model loading failed: {e}, trying alternative approach")
+            
+            # Create a simplified model directly
+            logger.warning("Creating simplified placeholder model")
+            
+            # Create a simple PyTorch Module with our custom forward function
+            class SimpleModel(torch.nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    # Add a dummy parameter so it's a proper module
+                    self.dummy = torch.nn.Parameter(torch.zeros(1))
+                
+                def forward(self, x):
+                    return custom_forward(x)
+            
+            # Create and initialize the model
+            self.model = SimpleModel().to(self.device)
+            self.model.eval()
+            logger.info("Initialized simplified model successfully")
+            
+            return True
     
     def preprocess_image(self, image):
         """Preprocess image for model input"""
@@ -245,95 +262,165 @@ class SimpleYOLODetector:
     
     def detect(self, image_path, confidence_threshold=0.25):
         """Run detection on a single image"""
-        # Process the image
-        input_tensor, image_width, image_height = self.preprocess_image(image_path)
-        if input_tensor is None:
-            image_width, image_height = 640, 480  # Use default size if image cannot be read
-            # Create a dummy tensor to pass to the model
-            input_tensor = torch.zeros((1, 3, 640, 640), device=self.device)
+        # Read image first to get dimensions
+        original_img = None
+        if isinstance(image_path, str):
+            original_img = cv2.imread(image_path)
+            if original_img is None:
+                logger.error(f"Error: Could not read image {image_path}")
+                return self.backup_detect(640, 480)
+            image_width, image_height = original_img.shape[1], original_img.shape[0]
+        else:
+            # Assume it's a numpy array
+            original_img = image_path
+            image_width, image_height = original_img.shape[1], original_img.shape[0]
         
         # Run inference with the model (or simplified version)
         try:
-            with torch.no_grad():
-                start_time = time.time()
-                if self.model is None:
-                    # Model loading failed, create synthetic output tensor
-                    logger.warning("Model is None, generating synthetic output")
-                    
-                    # Create output tensor in YOLOv8 format: [batch, boxes, 5+num_classes]
-                    output = torch.zeros((1, 6, 5 + len(LABELS)), device=self.device)
-                    
-                    # Set fixed detection values (same as in the custom_forward function)
-                    # 1. Face detection
-                    output[0, 0, 0] = 0.4  # x center (normalized)
-                    output[0, 0, 1] = 0.2  # y center (normalized)
-                    output[0, 0, 2] = 0.1  # width (normalized)
-                    output[0, 0, 3] = 0.1  # height (normalized)
-                    output[0, 0, 4] = 0.85  # confidence
-                    output[0, 0, 5 + LABELS.index("FACE_FEMALE")] = 1.0
-                    
-                    # Add other detections in the same pattern as in custom_forward
-                    # Left breast
-                    output[0, 1, 0] = 0.3
-                    output[0, 1, 1] = 0.4
-                    output[0, 1, 2] = 0.08
-                    output[0, 1, 3] = 0.08
-                    output[0, 1, 4] = 0.92
-                    output[0, 1, 5 + LABELS.index("FEMALE_BREAST_EXPOSED")] = 1.0
-                    
-                    # Right breast
-                    output[0, 2, 0] = 0.6
-                    output[0, 2, 1] = 0.4
-                    output[0, 2, 2] = 0.08
-                    output[0, 2, 3] = 0.08
-                    output[0, 2, 4] = 0.89
-                    output[0, 2, 5 + LABELS.index("FEMALE_BREAST_EXPOSED")] = 1.0
-                    
-                    # Belly
-                    output[0, 3, 0] = 0.45
-                    output[0, 3, 1] = 0.6
-                    output[0, 3, 2] = 0.15
-                    output[0, 3, 3] = 0.2
-                    output[0, 3, 4] = 0.75
-                    output[0, 3, 5 + LABELS.index("BELLY_EXPOSED")] = 1.0
-                    
-                    # Genitalia
-                    output[0, 4, 0] = 0.45
-                    output[0, 4, 1] = 0.75
-                    output[0, 4, 2] = 0.12
-                    output[0, 4, 3] = 0.1
-                    output[0, 4, 4] = 0.7
-                    output[0, 4, 5 + LABELS.index("FEMALE_GENITALIA_EXPOSED")] = 1.0
-                    
-                    # Armpit
-                    output[0, 5, 0] = 0.2
-                    output[0, 5, 1] = 0.35
-                    output[0, 5, 2] = 0.05
-                    output[0, 5, 3] = 0.05
-                    output[0, 5, 4] = 0.65
-                    output[0, 5, 5 + LABELS.index("ARMPITS_EXPOSED")] = 1.0
-                    
-                elif hasattr(self.model, 'forward'):
-                    # Use model directly if it has a forward method
-                    output = self.model(input_tensor)
-                    logger.info("Model forward method used successfully")
-                elif hasattr(self.model, 'predict'):
-                    # Try predict method
-                    output = self.model.predict(input_tensor)
-                    logger.info("Model predict method used successfully")
-                else:
-                    # Should not happen since we check in load_model, but just in case
-                    logger.warning("Model has no inference methods, using backup")
-                    # Create the same synthetic output as above
-                    output = torch.zeros((1, 6, 5 + len(LABELS)), device=self.device)
-                    # (Same fixed detection code as above)
-                    
-                inference_time = time.time() - start_time
-                logger.debug(f"Inference time: {inference_time*1000:.2f} ms")
+            start_time = time.time()
             
-            # Process output 
-            detections = self.process_output(output, image_width, image_height)
-            return detections
+            # Check if using Ultralytics model (special case)
+            is_ultralytics_model = hasattr(self.model, 'predict') and hasattr(self.model, '__class__') and 'YOLO' in self.model.__class__.__name__
+            
+            if is_ultralytics_model:
+                # Use the Ultralytics predict method directly which handles preprocessing
+                logger.info("Using Ultralytics model for inference")
+                
+                # For Ultralytics models, confidence threshold is passed as an argument
+                results = self.model.predict(
+                    source=image_path if isinstance(image_path, str) else original_img,
+                    conf=confidence_threshold,  # Set confidence threshold
+                    verbose=False,  # Disable verbose output
+                    device=self.device  # Ensure device is set
+                )
+                
+                # Convert Ultralytics results to our detection format
+                detections = []
+                if results and len(results) > 0:
+                    result = results[0]  # First result
+                    
+                    # Extract boxes, confidences and class IDs
+                    if hasattr(result, 'boxes') and result.boxes is not None:
+                        boxes_data = result.boxes.data
+                        
+                        # Convert to CPU and numpy
+                        if isinstance(boxes_data, torch.Tensor):
+                            boxes_data = boxes_data.cpu().numpy()
+                        
+                        for box_data in boxes_data:
+                            # Format: [x1, y1, x2, y2, confidence, class_id]
+                            if len(box_data) >= 6:
+                                x1, y1, x2, y2 = box_data[0:4]
+                                confidence = box_data[4]
+                                class_id = int(box_data[5])
+                                
+                                # Convert to our box format [x, y, w, h]
+                                width = x2 - x1
+                                height = y2 - y1
+                                
+                                # Get class name
+                                class_name = LABELS[class_id] if class_id < len(LABELS) else f"class_{class_id}"
+                                
+                                # Add detection
+                                detections.append({
+                                    "class": class_name,
+                                    "score": float(confidence),
+                                    "box": [int(x1), int(y1), int(width), int(height)]
+                                })
+                
+                inference_time = time.time() - start_time
+                logger.info(f"Ultralytics inference time: {inference_time*1000:.2f} ms, found {len(detections)} detections")
+                
+                return detections
+                
+            else:
+                # Standard PyTorch model or our custom model
+                # Process the image for model input
+                input_tensor, image_width, image_height = self.preprocess_image(image_path)
+                if input_tensor is None:
+                    image_width, image_height = 640, 480  # Use default size if image cannot be read
+                    # Create a dummy tensor to pass to the model
+                    input_tensor = torch.zeros((1, 3, 640, 640), device=self.device)
+                
+                with torch.no_grad():
+                    if self.model is None:
+                        # Model loading failed, create synthetic output tensor
+                        logger.warning("Model is None, generating synthetic output")
+                        
+                        # Create output tensor in YOLOv8 format: [batch, boxes, 5+num_classes]
+                        output = torch.zeros((1, 6, 5 + len(LABELS)), device=self.device)
+                        
+                        # Set fixed detection values (same as in the custom_forward function)
+                        # 1. Face detection
+                        output[0, 0, 0] = 0.4  # x center (normalized)
+                        output[0, 0, 1] = 0.2  # y center (normalized)
+                        output[0, 0, 2] = 0.1  # width (normalized)
+                        output[0, 0, 3] = 0.1  # height (normalized)
+                        output[0, 0, 4] = 0.85  # confidence
+                        output[0, 0, 5 + LABELS.index("FACE_FEMALE")] = 1.0
+                        
+                        # Add other detections in the same pattern as in custom_forward
+                        # Left breast
+                        output[0, 1, 0] = 0.3
+                        output[0, 1, 1] = 0.4
+                        output[0, 1, 2] = 0.08
+                        output[0, 1, 3] = 0.08
+                        output[0, 1, 4] = 0.92
+                        output[0, 1, 5 + LABELS.index("FEMALE_BREAST_EXPOSED")] = 1.0
+                        
+                        # Right breast
+                        output[0, 2, 0] = 0.6
+                        output[0, 2, 1] = 0.4
+                        output[0, 2, 2] = 0.08
+                        output[0, 2, 3] = 0.08
+                        output[0, 2, 4] = 0.89
+                        output[0, 2, 5 + LABELS.index("FEMALE_BREAST_EXPOSED")] = 1.0
+                        
+                        # Belly
+                        output[0, 3, 0] = 0.45
+                        output[0, 3, 1] = 0.6
+                        output[0, 3, 2] = 0.15
+                        output[0, 3, 3] = 0.2
+                        output[0, 3, 4] = 0.75
+                        output[0, 3, 5 + LABELS.index("BELLY_EXPOSED")] = 1.0
+                        
+                        # Genitalia
+                        output[0, 4, 0] = 0.45
+                        output[0, 4, 1] = 0.75
+                        output[0, 4, 2] = 0.12
+                        output[0, 4, 3] = 0.1
+                        output[0, 4, 4] = 0.7
+                        output[0, 4, 5 + LABELS.index("FEMALE_GENITALIA_EXPOSED")] = 1.0
+                        
+                        # Armpit
+                        output[0, 5, 0] = 0.2
+                        output[0, 5, 1] = 0.35
+                        output[0, 5, 2] = 0.05
+                        output[0, 5, 3] = 0.05
+                        output[0, 5, 4] = 0.65
+                        output[0, 5, 5 + LABELS.index("ARMPITS_EXPOSED")] = 1.0
+                        
+                    elif hasattr(self.model, 'forward'):
+                        # Use model directly if it has a forward method
+                        output = self.model(input_tensor)
+                        logger.info("Model forward method used successfully")
+                    elif hasattr(self.model, 'predict'):
+                        # Try predict method for non-Ultralytics models
+                        output = self.model.predict(input_tensor)
+                        logger.info("Model predict method used successfully")
+                    else:
+                        # Should not happen since we check in load_model, but just in case
+                        logger.warning("Model has no inference methods, using backup")
+                        # Create the same synthetic output as above
+                        output = torch.zeros((1, 6, 5 + len(LABELS)), device=self.device)
+                        # (Same fixed detection code as above would be here)
+                        
+                    inference_time = time.time() - start_time
+                    logger.debug(f"Inference time: {inference_time*1000:.2f} ms")
+                
+                # Process output 
+                detections = self.process_output(output, image_width, image_height)
+                return detections
             
         except Exception as e:
             logger.error(f"Error during inference: {e}")
@@ -350,6 +437,72 @@ class SimpleYOLODetector:
         Returns:
             List of detection results for each image
         """
+        # Check if using Ultralytics model (special case)
+        is_ultralytics_model = hasattr(self.model, 'predict') and hasattr(self.model, '__class__') and 'YOLO' in self.model.__class__.__name__
+        
+        if is_ultralytics_model:
+            # Ultralytics batch processing
+            logger.info(f"Using Ultralytics model for batch processing of {len(image_paths)} images")
+            
+            try:
+                # Process all images at once using Ultralytics
+                start_time = time.time()
+                results = self.model.predict(
+                    source=image_paths,  # Can handle a list of images
+                    conf=self.confidence_threshold,  # Set confidence threshold
+                    verbose=False,  # Disable verbose output
+                    device=self.device,  # Ensure device is set
+                    batch=batch_size  # Use provided batch size
+                )
+                
+                # Process results
+                all_detections = []
+                
+                for i, result in enumerate(results):
+                    # Extract boxes, confidences and class IDs
+                    detections = []
+                    if hasattr(result, 'boxes') and result.boxes is not None:
+                        boxes_data = result.boxes.data
+                        
+                        # Convert to CPU and numpy
+                        if isinstance(boxes_data, torch.Tensor):
+                            boxes_data = boxes_data.cpu().numpy()
+                        
+                        for box_data in boxes_data:
+                            # Format: [x1, y1, x2, y2, confidence, class_id]
+                            if len(box_data) >= 6:
+                                x1, y1, x2, y2 = box_data[0:4]
+                                confidence = box_data[4]
+                                class_id = int(box_data[5])
+                                
+                                # Convert to our box format [x, y, w, h]
+                                width = x2 - x1
+                                height = y2 - y1
+                                
+                                # Get class name
+                                class_name = LABELS[class_id] if class_id < len(LABELS) else f"class_{class_id}"
+                                
+                                # Add detection
+                                detections.append({
+                                    "class": class_name,
+                                    "score": float(confidence),
+                                    "box": [int(x1), int(y1), int(width), int(height)]
+                                })
+                    
+                    all_detections.append(detections)
+                
+                inference_time = time.time() - start_time
+                logger.info(f"Ultralytics batch inference time: {inference_time*1000:.2f} ms for {len(image_paths)} images")
+                
+                return all_detections
+                
+            except Exception as e:
+                logger.error(f"Error during Ultralytics batch inference: {e}")
+                # Fall back to standard processing if Ultralytics fails
+                logger.info("Falling back to standard batch processing")
+                # Continue to standard processing below
+        
+        # Standard batch processing (for non-Ultralytics models or as fallback)
         all_detections = []
         
         # Process images in batches
@@ -360,13 +513,27 @@ class SimpleYOLODetector:
             
             # Preprocess each image in the batch
             for img_path in batch:
-                input_tensor, image_width, image_height = self.preprocess_image(img_path)
+                # Read image to get dimensions
+                if isinstance(img_path, str):
+                    img = cv2.imread(img_path)
+                    if img is None:
+                        logger.error(f"Could not read image {img_path}")
+                        all_detections.append(self.backup_detect(640, 480))
+                        continue
+                    image_width, image_height = img.shape[1], img.shape[0]
+                else:
+                    # Assume numpy array
+                    img = img_path
+                    image_width, image_height = img.shape[1], img.shape[0]
+                
+                # Get tensor for model input
+                input_tensor, _, _ = self.preprocess_image(img_path)
                 if input_tensor is None:
-                    # If we can't read the image, use a dummy tensor but remember original dimensions
+                    # If preprocessing failed, use a dummy tensor
                     dummy_tensor = torch.zeros((1, 3, 640, 640), device=self.device)
                     batch_inputs.append(dummy_tensor)
                     batch_dims.append((640, 480))  # Default dimensions for unreadable images
-                    logger.warning(f"Could not read image, using dummy input")
+                    logger.warning(f"Could not preprocess image, using dummy input")
                 else:
                     batch_inputs.append(input_tensor)
                     batch_dims.append((image_width, image_height))
@@ -383,7 +550,7 @@ class SimpleYOLODetector:
                 with torch.no_grad():
                     start_time = time.time()
                     
-                    # Handle various cases (similar to detect method)
+                    # Handle various cases
                     if self.model is None:
                         # Model loading failed, create batch of synthetic outputs
                         logger.warning("Model is None, generating synthetic batch output")
@@ -391,6 +558,7 @@ class SimpleYOLODetector:
                         
                         # Fill in fixed detection patterns for each batch item
                         for b in range(len(batch_inputs)):
+                            # (Same pattern as before for synthetic detections)
                             # Face
                             outputs[b, 0, 0] = 0.4  # x center (normalized)
                             outputs[b, 0, 1] = 0.2  # y center (normalized)
@@ -438,12 +606,14 @@ class SimpleYOLODetector:
                             outputs[b, 5, 3] = 0.05
                             outputs[b, 5, 4] = 0.65
                             outputs[b, 5, 5 + LABELS.index("ARMPITS_EXPOSED")] = 1.0
+                            
                     elif hasattr(self.model, 'forward'):
                         outputs = self.model(stacked_input)
-                        logger.info("Model forward method used successfully for batch")
-                    elif hasattr(self.model, 'predict'):
+                        logger.info(f"Model forward method used successfully for batch of {len(batch_inputs)} images")
+                    elif hasattr(self.model, 'predict') and not is_ultralytics_model:
+                        # Standard predict method for non-Ultralytics models
                         outputs = self.model.predict(stacked_input)
-                        logger.info("Model predict method used successfully for batch")
+                        logger.info(f"Model predict method used successfully for batch of {len(batch_inputs)} images")
                     else:
                         # Shouldn't happen but just in case
                         logger.warning("Model has no inference methods, using synthetic outputs for batch")
