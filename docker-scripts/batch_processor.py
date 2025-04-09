@@ -59,11 +59,57 @@ def check_memory_usage(threshold=90.0):
     percent_used = vm.percent
     return percent_used > threshold
 
+def normalize_windows_path(path):
+    """
+    More aggressive Windows path normalization for paths inside the JSON file.
+    Handles backslashes and properly converts to Docker-mounted paths.
+    """
+    # Replace backslashes with forward slashes
+    path = path.replace('\\', '/')
+    
+    # Check if it's a Windows path with drive letter (e.g., D:/path/...)
+    if len(path) > 1 and path[1] == ':' and path[0].isalpha():
+        # Extract drive letter
+        drive = path[0].lower()
+        # Create mount path (/mnt/d/...)
+        path = f"/mnt/{drive}/{path[3:]}"
+    
+    return path
+
+def check_file_exists(path):
+    """Check if a file exists, with helpful logging for debugging path issues"""
+    exists = os.path.exists(path)
+    if not exists:
+        parent_dir = os.path.dirname(path)
+        if not os.path.exists(parent_dir):
+            print(f"Warning: Parent directory doesn't exist: {parent_dir}", file=sys.stderr)
+        print(f"Warning: File not found: {path}", file=sys.stderr)
+    return exists
+
 def process_image_batch(image_paths):
     """Process a batch of images and return results"""
     results = {}
-    # Normalize paths for Docker environment
-    normalized_paths = {path: normalize_path(path) for path in image_paths}
+    valid_paths = []
+    original_to_normalized = {}
+    
+    # Normalize paths more aggressively for Windows file paths
+    for path in image_paths:
+        normalized_path = normalize_windows_path(path)
+        original_to_normalized[path] = normalized_path
+        exists = check_file_exists(normalized_path)
+        
+        if exists:
+            valid_paths.append(path)
+        else:
+            # File doesn't exist - record error without trying to process
+            results[path] = {
+                'error': f"File not found: {normalized_path}",
+                'success': False
+            }
+    
+    # If no valid files, just return the errors
+    if not valid_paths:
+        return results
     
     try:
         # Get the detector instance
@@ -72,13 +118,16 @@ def process_image_batch(image_paths):
         # Check memory before processing
         memory_before = psutil.virtual_memory().percent
         
-        # Process a batch of images with NudeDetector
+        # Collect all normalized paths for valid files
+        paths_to_process = [original_to_normalized[p] for p in valid_paths]
+        
+        # Process batch with normalized paths
         start_time = time.time()
-        detections_batch = detector.detect_batch([normalized_paths[p] for p in image_paths])
+        detections_batch = detector.detect_batch(paths_to_process)
         batch_time = time.time() - start_time
         
         # Map results back to original paths
-        for i, path in enumerate(image_paths):
+        for i, path in enumerate(valid_paths):
             try:
                 results[path] = {
                     'detections': detections_batch[i],
@@ -93,19 +142,27 @@ def process_image_batch(image_paths):
     except Exception as e:
         # If batch processing fails, process one by one as fallback
         print(f"Batch processing failed: {str(e)}. Falling back to individual processing.")
-        for path in image_paths:
+        for path in valid_paths:
             try:
                 detector = get_detector()
-                start_time = time.time()
-                detections = detector.detect(normalized_paths[path])
+                normalized_path = original_to_normalized[path]
                 
-                results[path] = {
-                    'detections': detections,
-                    'success': True
-                }
+                if os.path.exists(normalized_path):
+                    start_time = time.time()
+                    detections = detector.detect(normalized_path)
+                    
+                    results[path] = {
+                        'detections': detections,
+                        'success': True
+                    }
+                else:
+                    results[path] = {
+                        'error': f"File not found: {normalized_path}",
+                        'success': False
+                    }
             except Exception as e:
                 results[path] = {
-                    'error': str(e),
+                    'error': f"Error processing {path}: {str(e)}",
                     'success': False
                 }
     
