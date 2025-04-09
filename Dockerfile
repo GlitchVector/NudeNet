@@ -19,6 +19,13 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Create symbolic links for CUDA libraries to ensure they're found
+RUN ln -s /usr/local/cuda/lib64/libcudart.so /usr/lib/libcudart.so && \
+    ln -s /usr/local/cuda/lib64/libcublas.so /usr/lib/libcublas.so && \
+    ln -s /usr/local/cuda/lib64/libcurand.so /usr/lib/libcurand.so && \
+    ln -s /usr/local/cuda/lib64/libcusolver.so /usr/lib/libcusolver.so && \
+    ln -s /usr/local/cuda/lib64/libcusparse.so /usr/lib/libcusparse.so
+
 # Upgrade pip and install essential packages
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
@@ -70,6 +77,9 @@ RUN cd /app && python3 /app/docker-scripts/yolov8_converter.py --input "/app/mod
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
 ENV CUDA_VISIBLE_DEVICES=0
+
+# Set library paths for CUDA
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
 
 # Set logging level to show GPU-related info
 ENV ONNXRUNTIME_LOG_LEVEL=0

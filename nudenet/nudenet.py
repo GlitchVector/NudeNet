@@ -172,10 +172,28 @@ class NudeDetector:
         # Try loading CUDA libraries directly to ensure they're found
         try:
             import ctypes
-            ctypes.CDLL("libcudart.so")
-            self.logger.info("Successfully loaded CUDA runtime library")
+            # Try multiple possible library paths
+            cuda_paths = [
+                "libcudart.so",                      # Standard system path
+                "/usr/local/cuda/lib64/libcudart.so", # Default CUDA installation
+                "/usr/lib/libcudart.so",              # Our symlink
+                "/usr/lib/x86_64-linux-gnu/libcudart.so" # Ubuntu specific path
+            ]
+            
+            loaded = False
+            for path in cuda_paths:
+                try:
+                    ctypes.CDLL(path)
+                    self.logger.info(f"Successfully loaded CUDA runtime library from {path}")
+                    loaded = True
+                    break
+                except Exception as path_e:
+                    self.logger.debug(f"Could not load from {path}: {path_e}")
+            
+            if not loaded:
+                self.logger.warning("Could not load CUDA runtime library from any known path")
         except Exception as e:
-            self.logger.warning(f"Could not load CUDA runtime library: {e}")
+            self.logger.warning(f"Error while trying to load CUDA runtime library: {e}")
         
         try:
             # Try to use GPU providers by default
