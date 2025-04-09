@@ -12,26 +12,25 @@ URL = "https://github.com/notAI-tech/nudenet"
 EMAIL = "praneeth@bpraneeth.com"
 AUTHOR = "BEDAPUDI PRANEETH"
 REQUIRES_PYTHON = ">=3.6.0"
-VERSION = "3.4.2"
+VERSION = "3.4.3"  # Updated version for the improved GPU support
 
 # What packages are required for this module to be executed?
 REQUIRED = [
     "numpy<2.0.0",  # Use NumPy 1.x for compatibility
     "onnxruntime",
     "opencv-python-headless",
-    "pyyaml",  # Required for model conversion
 ]
 
 # GPU dependencies
 GPU_EXTRAS = [
     "onnxruntime-gpu",
-    "torch",  # Optional PyTorch support
-    "ultralytics",  # For YOLOv8 model support
+    "torch>=2.0.0",  # PyTorch 2.0+ for GPU support
 ]
 
 # What packages are optional?
 EXTRAS = {
     'gpu': GPU_EXTRAS,
+    'api': ["fastdeploy>=0.3.0"],  # API server dependencies
 }
 
 # The rest you shouldn't have to touch too much :)

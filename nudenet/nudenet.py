@@ -201,10 +201,11 @@ class NudeDetector:
                         import sys
                         if os.path.exists("/app/docker-scripts/simple_pytorch_detector.py"):
                             sys.path.append("/app/docker-scripts")
-                            from simple_pytorch_detector import SimpleYOLODetector
+                            # Use the cached model implementation for better performance
+                            from simple_pytorch_detector import get_cached_model
                             
-                            # Create the detector
-                            self.pytorch_detector = SimpleYOLODetector(pytorch_model_path, 'cuda')
+                            # Get or create the detector using the cached implementation
+                            self.pytorch_detector = get_cached_model(pytorch_model_path, 'cuda')
                             self.use_pytorch = True
                             self.logger.info("PyTorch detector initialized successfully")
                         else:
@@ -345,6 +346,16 @@ class NudeDetector:
         Returns:
             List of detection results for each image.
         """
+        # Use PyTorch detector if available (more efficient batch processing)
+        if self.use_pytorch and self.pytorch_detector:
+            try:
+                self.logger.debug(f"Using PyTorch batch detection for {len(image_paths)} images")
+                detections = self.pytorch_detector.detect_batch(image_paths, batch_size)
+                return detections
+            except Exception as e:
+                self.logger.warning(f"PyTorch batch detection failed: {e}, falling back to ONNX Runtime")
+        
+        # Fall back to ONNX Runtime if PyTorch is not available
         all_detections = []
 
         for i in range(0, len(image_paths), batch_size):
@@ -353,17 +364,44 @@ class NudeDetector:
             batch_metadata = []
 
             for image_path in batch:
-                (
-                    preprocessed_image,
-                    x_ratio,
-                    y_ratio,
-                    x_pad,
-                    y_pad,
-                    image_original_width,
-                    image_original_height,
-                ) = _read_image(image_path, self.input_width)
-                batch_inputs.append(preprocessed_image)
-                batch_metadata.append(
+                try:
+                    (
+                        preprocessed_image,
+                        x_ratio,
+                        y_ratio,
+                        x_pad,
+                        y_pad,
+                        image_original_width,
+                        image_original_height,
+                    ) = _read_image(image_path, self.input_width)
+                    batch_inputs.append(preprocessed_image)
+                    batch_metadata.append(
+                        (
+                            x_ratio,
+                            y_ratio,
+                            x_pad,
+                            y_pad,
+                            image_original_width,
+                            image_original_height,
+                        )
+                    )
+                except Exception as e:
+                    self.logger.error(f"Error processing image {image_path}: {e}")
+                    all_detections.append([])  # Add empty detection for failed image
+
+            # If no valid images in this batch, continue to next batch
+            if not batch_inputs:
+                continue
+
+            # Stack the preprocessed images into a single numpy array
+            try:
+                batch_input = np.vstack(batch_inputs)
+
+                # Run inference on the batch
+                outputs = self.onnx_session.run(None, {self.input_name: batch_input})
+
+                # Process the outputs for each image in the batch
+                for j, metadata in enumerate(batch_metadata):
                     (
                         x_ratio,
                         y_ratio,
@@ -371,37 +409,24 @@ class NudeDetector:
                         y_pad,
                         image_original_width,
                         image_original_height,
+                    ) = metadata
+                    detections = _postprocess(
+                        [outputs[0][j : j + 1]],  # Select the output for this image
+                        x_pad,
+                        y_pad,
+                        x_ratio,
+                        y_ratio,
+                        image_original_width,
+                        image_original_height,
+                        self.input_width,
+                        self.input_height,
                     )
-                )
-
-            # Stack the preprocessed images into a single numpy array
-            batch_input = np.vstack(batch_inputs)
-
-            # Run inference on the batch
-            outputs = self.onnx_session.run(None, {self.input_name: batch_input})
-
-            # Process the outputs for each image in the batch
-            for j, metadata in enumerate(batch_metadata):
-                (
-                    x_ratio,
-                    y_ratio,
-                    x_pad,
-                    y_pad,
-                    image_original_width,
-                    image_original_height,
-                ) = metadata
-                detections = _postprocess(
-                    [outputs[0][j : j + 1]],  # Select the output for this image
-                    x_pad,
-                    y_pad,
-                    x_ratio,
-                    y_ratio,
-                    image_original_width,
-                    image_original_height,
-                    self.input_width,
-                    self.input_height,
-                )
-                all_detections.append(detections)
+                    all_detections.append(detections)
+            except Exception as e:
+                self.logger.error(f"Error during batch inference: {e}")
+                # Add empty detections for all images in this batch
+                for _ in range(len(batch_metadata)):
+                    all_detections.append([])
 
         return all_detections
 

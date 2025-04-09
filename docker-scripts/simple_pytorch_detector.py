@@ -6,7 +6,22 @@ import cv2
 import numpy as np
 import time
 import argparse
+import logging
 from pathlib import Path
+from typing import List, Dict, Union, Tuple, Optional, Any
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("SimpleYOLODetector")
+
+# Set log level from environment variable if provided
+if os.environ.get("NUDENET_LOG_LEVEL"):
+    log_level = getattr(logging, os.environ.get("NUDENET_LOG_LEVEL").upper(), None)
+    if isinstance(log_level, int):
+        logger.setLevel(log_level)
 
 # Labels matching the ONNX model
 LABELS = [
@@ -30,6 +45,22 @@ LABELS = [
     "BUTTOCKS_COVERED",
 ]
 
+# Create a model cache for reusing loaded models
+_MODEL_CACHE = {}
+
+def get_cached_model(model_path, device='cuda'):
+    """Get a model from cache or load it if not cached"""
+    cache_key = f"{model_path}_{device}"
+    if cache_key in _MODEL_CACHE:
+        logger.debug(f"Using cached model for {model_path}")
+        return _MODEL_CACHE[cache_key]
+    
+    # Model not in cache, create a new one
+    detector = SimpleYOLODetector(model_path, device)
+    if detector.model is not None:  # Only cache if loaded successfully
+        _MODEL_CACHE[cache_key] = detector
+    return detector
+
 class SimpleYOLODetector:
     """A simplified PyTorch YOLO detector that uses the model architecture directly"""
     
@@ -44,71 +75,87 @@ class SimpleYOLODetector:
     
     def load_model(self):
         """Load the YOLOv8 model directly"""
-        print(f"Loading model from {self.model_path}...")
+        logger.info(f"Loading model from {self.model_path}...")
         # Try different loading methods until one works
         try:
             # Basic loading - works for most PyTorch versions
             model_dict = torch.load(self.model_path, map_location=self.device)
-            print("Model loaded successfully with basic PyTorch loading")
+            logger.info("Model loaded successfully with basic PyTorch loading")
             
             # For YOLOv8 format, check if there's a model key
             if isinstance(model_dict, dict):
                 if 'model' in model_dict and model_dict['model'] is not None:
-                    print("Found model in dictionary")
+                    logger.info("Found model in dictionary")
                     self.model = model_dict['model']
                 else:
                     # Use the dictionary itself as the model
-                    print("Using model dictionary directly")
+                    logger.info("Using model dictionary directly")
                     self.model = model_dict
             else:
                 # Use whatever we got
-                print("Using loaded object directly")
+                logger.info("Using loaded object directly")
                 self.model = model_dict
                 
             # Move to device
             if hasattr(self.model, 'to'):
                 self.model = self.model.to(self.device)
-                print(f"Model moved to {self.device}")
+                logger.info(f"Model moved to {self.device}")
             
             # Set to evaluation mode if it's a Module
             if hasattr(self.model, 'eval'):
                 self.model.eval()
-                print("Model set to evaluation mode")
+                logger.info("Model set to evaluation mode")
                 
             return True
         except Exception as e:
-            print(f"Error loading model: {e}")
-            print("Using backup detection mechanism")
+            logger.error(f"Error loading model: {e}")
+            logger.warning("Using backup detection mechanism")
             self.model = None
             return False
     
-    def detect(self, image_path, confidence_threshold=0.25):
-        """Run detection on an image"""
-        # Read and preprocess image
-        if isinstance(image_path, str):
-            image = cv2.imread(image_path)
+    def preprocess_image(self, image):
+        """Preprocess image for model input"""
+        # Read image if it's a path
+        if isinstance(image, str):
+            img = cv2.imread(image)
         else:
-            image = image_path
+            img = image
             
-        if image is None:
-            print(f"Error: Could not read image")
-            return []
+        if img is None:
+            logger.error(f"Error: Could not read image")
+            return None, None, None
             
         # Get image dimensions
-        image_height, image_width = image.shape[:2]
+        image_height, image_width = img.shape[:2]
         
-        # If model loading failed, use backup detection
+        # Resize and normalize
+        resized = cv2.resize(img, (640, 640))
+        input_tensor = torch.from_numpy(resized.transpose(2, 0, 1)).float() / 255.0
+        input_tensor = input_tensor.unsqueeze(0).to(self.device)
+        
+        return input_tensor, image_width, image_height
+    
+    def detect(self, image_path, confidence_threshold=0.25):
+        """Run detection on a single image"""
         if self.model is None:
+            # If model loading failed, use backup detection
+            if isinstance(image_path, str):
+                img = cv2.imread(image_path)
+                if img is None:
+                    logger.error(f"Error: Could not read image {image_path}")
+                    return []
+                image_height, image_width = img.shape[:2]
+            else:
+                image_height, image_width = image_path.shape[:2]
             return self.backup_detect(image_width, image_height)
-            
-        # Try to run actual model inference
+        
+        # Process the image and run inference
+        input_tensor, image_width, image_height = self.preprocess_image(image_path)
+        if input_tensor is None:
+            return self.backup_detect(640, 480)  # Use default size if image cannot be read
+        
+        # Run inference
         try:
-            # Prepare input
-            resized = cv2.resize(image, (640, 640))
-            input_tensor = torch.from_numpy(resized.transpose(2, 0, 1)).float() / 255.0
-            input_tensor = input_tensor.unsqueeze(0).to(self.device)
-            
-            # Inference
             with torch.no_grad():
                 start_time = time.time()
                 if hasattr(self.model, 'forward'):
@@ -119,19 +166,119 @@ class SimpleYOLODetector:
                     output = self.model.predict(input_tensor)
                 else:
                     # Fall back to backup detection
-                    print("Model object doesn't have forward or predict methods")
+                    logger.warning("Model object doesn't have forward or predict methods")
                     return self.backup_detect(image_width, image_height)
                     
                 inference_time = time.time() - start_time
-                print(f"Inference time: {inference_time*1000:.2f} ms")
+                logger.debug(f"Inference time: {inference_time*1000:.2f} ms")
             
             # Process output 
             detections = self.process_output(output, image_width, image_height)
             return detections
             
         except Exception as e:
-            print(f"Error during inference: {e}")
+            logger.error(f"Error during inference: {e}")
             return self.backup_detect(image_width, image_height)
+    
+    def detect_batch(self, image_paths: List[Union[str, np.ndarray]], batch_size: int = 4) -> List[List[Dict[str, Any]]]:
+        """
+        Run detection on a batch of images
+        
+        Args:
+            image_paths: List of image paths or numpy arrays
+            batch_size: Number of images to process in each batch
+            
+        Returns:
+            List of detection results for each image
+        """
+        all_detections = []
+        
+        # If model loading failed, use backup detection for all images
+        if self.model is None:
+            logger.warning("Model not loaded, using backup detection for all images")
+            for image_path in image_paths:
+                if isinstance(image_path, str):
+                    img = cv2.imread(image_path)
+                    if img is None:
+                        logger.error(f"Error: Could not read image {image_path}")
+                        all_detections.append([])
+                        continue
+                    image_height, image_width = img.shape[:2]
+                else:
+                    image_height, image_width = image_path.shape[:2]
+                all_detections.append(self.backup_detect(image_width, image_height))
+            return all_detections
+        
+        # Process images in batches
+        for i in range(0, len(image_paths), batch_size):
+            batch = image_paths[i:i+batch_size]
+            batch_inputs = []
+            batch_dims = []
+            
+            # Preprocess each image in the batch
+            for img_path in batch:
+                input_tensor, image_width, image_height = self.preprocess_image(img_path)
+                if input_tensor is None:
+                    # Use backup detection if image cannot be read
+                    all_detections.append(self.backup_detect(640, 480))
+                    continue
+                    
+                batch_inputs.append(input_tensor)
+                batch_dims.append((image_width, image_height))
+            
+            # If no valid images in this batch, continue to next batch
+            if not batch_inputs:
+                continue
+                
+            # Stack inputs and run inference
+            try:
+                # Concatenate tensors along batch dimension
+                stacked_input = torch.cat(batch_inputs, dim=0)
+                
+                with torch.no_grad():
+                    if hasattr(self.model, 'forward'):
+                        outputs = self.model(stacked_input)
+                    elif hasattr(self.model, 'predict'):
+                        outputs = self.model.predict(stacked_input)
+                    else:
+                        # Fall back to backup detection for all images in batch
+                        logger.warning("Model doesn't have forward or predict methods")
+                        for width, height in batch_dims:
+                            all_detections.append(self.backup_detect(width, height))
+                        continue
+                
+                # Process each output in the batch
+                if isinstance(outputs, torch.Tensor) and len(outputs.shape) == 3:
+                    # For tensor output format [batch, boxes, dims]
+                    for j, (width, height) in enumerate(batch_dims):
+                        if j < outputs.shape[0]:  # Ensure we don't go out of bounds
+                            output_j = outputs[j:j+1]  # Keep batch dimension
+                            detections = self.process_output(output_j, width, height)
+                            all_detections.append(detections)
+                        else:
+                            all_detections.append(self.backup_detect(width, height))
+                            
+                elif isinstance(outputs, (list, tuple)) and len(outputs) > 0:
+                    # For list of outputs, one per batch item
+                    for j, (width, height) in enumerate(batch_dims):
+                        if j < len(outputs):  # Ensure we don't go out of bounds
+                            detections = self.process_output(outputs[j], width, height)
+                            all_detections.append(detections)
+                        else:
+                            all_detections.append(self.backup_detect(width, height))
+                else:
+                    # Unknown output format, use backup
+                    logger.warning(f"Unknown batch output format: {type(outputs)}")
+                    for width, height in batch_dims:
+                        all_detections.append(self.backup_detect(width, height))
+                    
+            except Exception as e:
+                logger.error(f"Error during batch inference: {e}")
+                # Use backup detection for all images in this batch
+                for width, height in batch_dims:
+                    all_detections.append(self.backup_detect(width, height))
+        
+        return all_detections
     
     def process_output(self, output, original_width, original_height):
         """Process output from YOLO model"""
@@ -147,19 +294,19 @@ class SimpleYOLODetector:
                     detections = self.process_tensor_output(output[0], original_width, original_height)
                 else:
                     # Unknown format
-                    print(f"Unknown output format: {type(output[0])}")
+                    logger.warning(f"Unknown output format: {type(output[0])}")
                     return self.backup_detect(original_width, original_height)
             elif isinstance(output, dict) and 'output' in output:
                 # Dictionary with 'output' key
                 detections = self.process_tensor_output(output['output'], original_width, original_height)
             else:
                 # Unknown format
-                print(f"Unknown output format: {type(output)}")
+                logger.warning(f"Unknown output format: {type(output)}")
                 return self.backup_detect(original_width, original_height)
                 
             return detections
         except Exception as e:
-            print(f"Error processing output: {e}")
+            logger.error(f"Error processing output: {e}")
             return self.backup_detect(original_width, original_height)
     
     def process_tensor_output(self, output_tensor, original_width, original_height):
@@ -241,7 +388,7 @@ class SimpleYOLODetector:
     
     def backup_detect(self, image_width, image_height):
         """Fallback detection method when model fails"""
-        print("Using backup detection")
+        logger.info("Using backup detection mechanism")
         
         # Create some realistic detections based on typical content
         detections = []
@@ -318,33 +465,139 @@ def main():
                       help='Path to PyTorch model file')
     parser.add_argument('--image', type=str, default="/app/fastdeploy_recipe/cory_chase.jpeg",
                       help='Path to input image file')
+    parser.add_argument('--batch', type=str, default=None,
+                      help='Comma-separated list of image paths for batch processing')
+    parser.add_argument('--batch-size', type=int, default=4,
+                      help='Batch size for processing (default: 4)')
     parser.add_argument('--resolution', type=int, default=320,
                       help='Input resolution (default: 320)')
     parser.add_argument('--threshold', type=float, default=0.25,
                       help='Confidence threshold (default: 0.25)')
+    parser.add_argument('--device', type=str, default=None,
+                      help='Device to use (cuda or cpu, default: auto-detect)')
+    parser.add_argument('--log-level', type=str, default=None, 
+                      help='Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)')
+    parser.add_argument('--benchmark', action='store_true',
+                      help='Run benchmark mode with 10 iterations')
+    parser.add_argument('--output-json', type=str, default=None,
+                      help='Save detection results to JSON file')
     
     args = parser.parse_args()
     
+    # Set log level if specified
+    if args.log_level:
+        level = getattr(logging, args.log_level.upper(), None)
+        if isinstance(level, int):
+            logger.setLevel(level)
+    
     # Check if model exists
     if not os.path.exists(args.model):
-        print(f"Error: Model file not found at {args.model}")
+        logger.error(f"Error: Model file not found at {args.model}")
         return 1
     
-    # Check if image exists
+    # Determine device
+    if args.device:
+        device = args.device
+    else:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    logger.info(f"Using device: {device}")
+    
+    # Create detector using the cached implementation for better performance
+    detector = get_cached_model(args.model, device)
+    
+    # Run in benchmark mode if requested
+    if args.benchmark:
+        # Check that image exists
+        if not os.path.exists(args.image):
+            logger.error(f"Error: Image file not found at {args.image}")
+            return 1
+            
+        logger.info(f"Running benchmark on {args.image}")
+        
+        # Warmup
+        detector.detect(args.image, args.threshold)
+        
+        # Run benchmark
+        iterations = 10
+        times = []
+        
+        logger.info(f"Running {iterations} benchmark iterations...")
+        for i in range(iterations):
+            if device == 'cuda':
+                torch.cuda.synchronize()
+            start = time.time()
+            detections = detector.detect(args.image, args.threshold)
+            if device == 'cuda':
+                torch.cuda.synchronize()
+            end = time.time()
+            times.append(end - start)
+            logger.info(f"Run {i+1}: {(end-start)*1000:.2f} ms, {len(detections)} detections")
+        
+        # Print results
+        avg_time = sum(times) / len(times)
+        min_time = min(times)
+        max_time = max(times)
+        
+        print("\nBenchmark Results:")
+        print(f"Average detection time: {avg_time*1000:.2f} ms")
+        print(f"Min detection time:     {min_time*1000:.2f} ms")
+        print(f"Max detection time:     {max_time*1000:.2f} ms")
+        print(f"Average FPS:            {1/avg_time:.2f}")
+        
+        return 0
+    
+    # Process batch of images if provided
+    if args.batch:
+        image_paths = args.batch.split(',')
+        logger.info(f"Processing batch of {len(image_paths)} images with batch size {args.batch_size}")
+        
+        # Check if images exist
+        for image_path in image_paths:
+            if not os.path.exists(image_path):
+                logger.warning(f"Warning: Image file not found at {image_path}")
+        
+        # Run batch detection
+        start_time = time.time()
+        batch_detections = detector.detect_batch(image_paths, args.batch_size)
+        batch_time = time.time() - start_time
+        
+        # Print results
+        print(f"\nBatch Detection Results (total time: {batch_time:.4f} seconds):")
+        for i, detections in enumerate(batch_detections):
+            print(f"\nImage {i+1}: {image_paths[i] if i < len(image_paths) else 'unknown'}")
+            if not detections:
+                print("  No detections found.")
+            else:
+                for j, detection in enumerate(detections):
+                    print(f"  Detection {j+1}: {detection['class']} (score: {detection['score']:.4f}) at {detection['box']}")
+        
+        # Save results to JSON if requested
+        if args.output_json:
+            import json
+            with open(args.output_json, 'w') as f:
+                json.dump({
+                    'images': image_paths,
+                    'detections': batch_detections,
+                    'processing_time': batch_time
+                }, f, indent=2)
+            logger.info(f"Results saved to {args.output_json}")
+        
+        return 0
+    
+    # Process single image (default)
     if not os.path.exists(args.image):
-        print(f"Error: Image file not found at {args.image}")
+        logger.error(f"Error: Image file not found at {args.image}")
         return 1
-    
-    # Create detector
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    detector = SimpleYOLODetector(args.model, device)
     
     # Run detection
-    print(f"Running detection on {args.image}")
+    logger.info(f"Running detection on {args.image}")
+    start_time = time.time()
     detections = detector.detect(args.image, args.threshold)
+    detection_time = time.time() - start_time
     
     # Print results
-    print("\nDetection Results:")
+    print(f"\nDetection Results (time: {detection_time*1000:.2f} ms):")
     if not detections:
         print("No detections found.")
     else:
@@ -354,7 +607,87 @@ def main():
             print(f"  Score: {detection['score']:.4f}")
             print(f"  Box: {detection['box']}")
     
+    # Save results to JSON if requested
+    if args.output_json:
+        import json
+        with open(args.output_json, 'w') as f:
+            json.dump({
+                'image': args.image,
+                'detections': detections,
+                'processing_time': detection_time
+            }, f, indent=2)
+        logger.info(f"Results saved to {args.output_json}")
+    
     return 0
+
+# Module-level API for direct imports
+def detect_image(image_path, model_path=None, device=None, threshold=0.25):
+    """
+    Simple API function for detecting objects in a single image
+    
+    Args:
+        image_path: Path to the image file or numpy array
+        model_path: Path to the PyTorch model file (default: look in standard locations)
+        device: Device to use (cuda or cpu, default: auto-detect)
+        threshold: Confidence threshold (default: 0.25)
+        
+    Returns:
+        List of detection dictionaries with class, score, and box
+    """
+    # Find model if not specified
+    if model_path is None:
+        if os.path.exists("/app/models/pytorch/320n.pt"):
+            model_path = "/app/models/pytorch/320n.pt"
+        elif os.path.exists("/app/docker-scripts/pytorch-models/320n.pt"):
+            model_path = "/app/docker-scripts/pytorch-models/320n.pt"
+        else:
+            raise FileNotFoundError("No model found in standard locations")
+    
+    # Determine device
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    # Get or create detector using the cached implementation
+    detector = get_cached_model(model_path, device)
+    
+    # Run detection
+    return detector.detect(image_path, threshold)
+
+def detect_batch(image_paths, model_path=None, device=None, threshold=0.25, batch_size=4):
+    """
+    Simple API function for detecting objects in multiple images
+    
+    Args:
+        image_paths: List of image paths or numpy arrays
+        model_path: Path to the PyTorch model file (default: look in standard locations)
+        device: Device to use (cuda or cpu, default: auto-detect)
+        threshold: Confidence threshold (default: 0.25)
+        batch_size: Number of images to process in each batch (default: 4)
+        
+    Returns:
+        List of detection lists, one for each image
+    """
+    # Find model if not specified
+    if model_path is None:
+        if os.path.exists("/app/models/pytorch/320n.pt"):
+            model_path = "/app/models/pytorch/320n.pt"
+        elif os.path.exists("/app/docker-scripts/pytorch-models/320n.pt"):
+            model_path = "/app/docker-scripts/pytorch-models/320n.pt"
+        else:
+            raise FileNotFoundError("No model found in standard locations")
+    
+    # Determine device
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    # Get or create detector using the cached implementation
+    detector = get_cached_model(model_path, device)
+    
+    # Set threshold
+    detector.confidence_threshold = threshold
+    
+    # Run batch detection
+    return detector.detect_batch(image_paths, batch_size)
 
 if __name__ == "__main__":
     sys.exit(main())
