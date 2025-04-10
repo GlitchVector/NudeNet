@@ -185,25 +185,59 @@ if [ "$BATCH_MODE" = true ]; then
     echo "Debug logging enabled"
   fi
   
-  # Create a shell script wrapper to ensure real-time output
-  TMP_SCRIPT=$(mktemp)
-  cat > "$TMP_SCRIPT" << 'EOF'
-#!/bin/bash
-# This wrapper forces each line of output to be flushed immediately
-# -u flag makes Python unbuffered
-# Use stdbuf to disable buffering at OS level
-stdbuf -i0 -o0 -e0 python3 -u "$@" | while IFS= read -r line; do
-  echo "$line"
-  # Force flush after each line
-  sleep 0.01
-done
+  # Use script to force immediate output line-by-line with line flush
+  cat > /tmp/real_time_output.py << 'EOF'
+#!/usr/bin/env python3
+import sys
+import os
+import fcntl
+import time
+import subprocess
+
+# Set stdout to line buffered mode
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True)
+
+# Make stdout non-blocking
+fd = sys.stdout.fileno()
+flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+# Run the command with arguments
+cmd = ["python3", "-u"] + sys.argv[1:]
+process = subprocess.Popen(
+    cmd, 
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+    bufsize=1
+)
+
+# Process stdout in real time
+while True:
+    line = process.stdout.readline()
+    if not line and process.poll() is not None:
+        break
+    if line:
+        # Write to stdout and immediately flush
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        # Force an immediate flush with a small delay
+        time.sleep(0.001)
+        
+    # Check stderr as well
+    err = process.stderr.readline()
+    if err:
+        sys.stderr.write(err)
+        sys.stderr.flush()
+
+exit(process.returncode)
 EOF
-  chmod +x "$TMP_SCRIPT"
+  chmod +x /tmp/real_time_output.py
   
-  # Run the batch processor through the wrapper with buffering disabled
-  stdbuf -i0 -o0 -e0 "$TMP_SCRIPT" /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
+  # Run batch processor through the Python wrapper for real-time output
+  PYTHONUNBUFFERED=1 /tmp/real_time_output.py /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
   EXIT_CODE=$?
-  rm -f "$TMP_SCRIPT"
   exit $EXIT_CODE
 fi
 

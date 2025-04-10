@@ -375,7 +375,7 @@ is_json_progress = False
 
 def progress_reporter_thread():
     """A separate thread that reports progress every second regardless of batch processing"""
-    interval = 0.5  # Half second update interval
+    interval = 0.2  # Update more frequently (200ms interval)
     last_progress = 0
     
     while not exit_flag:
@@ -406,19 +406,17 @@ def progress_reporter_thread():
                         "memory_percent": round(vm.percent, 1)
                     })
                 
-                # Print directly to device file to bypass all buffering
+                # Simplified direct output method - write to stdout
+                # Just ONE approach - using low-level file descriptor write
                 try:
-                    with open('/dev/stdout', 'w') as f:
-                        f.write(json.dumps(progress_data) + '\n')
-                        f.flush()
-                        # Add explicit newline for better buffering control
-                        f.write('\n')
-                        f.flush()
+                    json_output = json.dumps(progress_data)
+                    # Write directly to stdout file descriptor
+                    os.write(1, f"{json_output}\n".encode('utf-8'))
+                    # Force a system call to flush
+                    os.system("")
                 except:
-                    # Fallback to standard methods
+                    # Fall back to print if the above failed
                     print(json.dumps(progress_data), flush=True)
-                    print()  # Add empty line to force buffer flush
-                    force_flush_stdout()
                 
                 last_progress = current_progress
         
