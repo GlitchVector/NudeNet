@@ -131,7 +131,7 @@ def check_file_exists(path):
         logger.warning(f"File not found: {path}")
     return exists
 
-def process_image_batch(image_paths):
+def process_image_batch(image_paths, json_progress=False, current_count=0, total_count=0, start_time=None):
     """Process a batch of images and return results"""
     logger.debug(f"Processing batch of {len(image_paths)} images")
     results = {}
@@ -171,45 +171,71 @@ def process_image_batch(image_paths):
         # Collect all normalized paths for valid files
         paths_to_process = [original_to_normalized[p] for p in valid_paths]
         
-        # Process batch with normalized paths
-        start_time = time.time()
-        detections_batch = detector.detect_batch(paths_to_process)
-        batch_time = time.time() - start_time
-        
-        # Map results back to original paths
-        for i, path in enumerate(valid_paths):
-            try:
-                results[path] = {
-                    'detections': detections_batch[i],
-                    'success': True
-                }
-            except Exception as e:
-                results[path] = {
-                    'error': str(e),
-                    'success': False
-                }
+        # For individual image processing with progress reporting
+        if json_progress and start_time is not None:
+            # Process images one by one with progress updates
+            for i, (original_path, normalized_path) in enumerate(zip(valid_paths, paths_to_process)):
+                try:
+                    # Update progress for individual image
+                    current_image = current_count + i + 1
+                    elapsed = time.time() - start_time
+                    
+                    # Print progress report for individual image
+                    if current_image % 5 == 0 or current_image == total_count:
+                        print_progress(current_image, total_count, elapsed, json_progress)
+                    
+                    # Process individual image
+                    detections = detector.detect(normalized_path)
+                    results[original_path] = {
+                        'detections': detections,
+                        'success': True
+                    }
+                except Exception as e:
+                    results[original_path] = {
+                        'error': str(e),
+                        'success': False
+                    }
+        else:
+            # Process batch with normalized paths
+            start_time_batch = time.time()
+            detections_batch = detector.detect_batch(paths_to_process)
+            batch_time = time.time() - start_time_batch
+            
+            # Map results back to original paths
+            for i, path in enumerate(valid_paths):
+                try:
+                    results[path] = {
+                        'detections': detections_batch[i],
+                        'success': True
+                    }
+                except Exception as e:
+                    results[path] = {
+                        'error': str(e),
+                        'success': False
+                    }
     
     except Exception as e:
         # If batch processing fails, process one by one as fallback
-        print(f"Batch processing failed: {str(e)}. Falling back to individual processing.")
-        for path in valid_paths:
+        print(f"Batch processing failed: {str(e)}. Falling back to individual processing.", file=sys.stderr)
+        for i, path in enumerate(valid_paths):
             try:
                 detector = get_detector()
                 normalized_path = original_to_normalized[path]
                 
-                if os.path.exists(normalized_path):
-                    start_time = time.time()
-                    detections = detector.detect(normalized_path)
-                    
-                    results[path] = {
-                        'detections': detections,
-                        'success': True
-                    }
-                else:
-                    results[path] = {
-                        'error': f"File not found: {normalized_path}",
-                        'success': False
-                    }
+                # We already checked existence, no need to check again
+                # Update progress for individual image in fallback mode
+                if json_progress and start_time is not None:
+                    current_image = current_count + i + 1
+                    elapsed = time.time() - start_time
+                    print_progress(current_image, total_count, elapsed, json_progress)
+                
+                # Process individual image
+                detections = detector.detect(normalized_path)
+                
+                results[path] = {
+                    'detections': detections,
+                    'success': True
+                }
             except Exception as e:
                 results[path] = {
                     'error': f"Error processing {path}: {str(e)}",
@@ -229,7 +255,22 @@ def process_image_batch(image_paths):
 
 def print_progress(current, total, elapsed, json_format=False):
     """Print progress information in plain text or JSON format"""
-    # Get memory information
+    # Set update frequency based on batch size to prevent too many updates
+    if total <= 100:
+        min_update_frequency = 1  # Every image for very small batches
+    elif total <= 500:
+        min_update_frequency = 5  # Every 5 images for small batches
+    elif total <= 2000:
+        min_update_frequency = 10  # Every 10 images for medium batches
+    else:
+        min_update_frequency = 20  # Every 20 images for large batches
+        
+    # Check if we should print an update based on frequency
+    should_update = (current % min_update_frequency == 0) or (current == total)
+    if not should_update and current > 0:  # Skip intermediate updates
+        return
+        
+    # Get memory information (only when actually printing)
     vm = psutil.virtual_memory()
     memory_info = {
         "memory_percent": round(vm.percent, 1),
@@ -245,10 +286,11 @@ def print_progress(current, total, elapsed, json_format=False):
             "percent": round(current/total*100, 1) if total > 0 else 0
         }
         
-        # Only include detailed metrics on milestone updates to reduce verbosity
-        is_milestone = (current % max(1, min(total // 10, 20)) == 0) or current == total
-        if is_milestone:
-            # Add more detailed information on milestone updates
+        # Major milestone is every ~10% or at the end
+        is_major_milestone = (current % max(1, min(total // 10, 100)) == 0) or current == total
+        
+        # For major milestones, include detailed metrics
+        if is_major_milestone:
             progress_data.update({
                 "elapsed_seconds": round(elapsed, 2),
                 "images_per_second": round(current/elapsed, 2) if elapsed > 0 else 0,
@@ -461,7 +503,7 @@ def main():
     total_images = len(image_paths)
     processed_images = 0
     
-    # Process in batches
+    # Process in batches or individually, depending on use case
     for i in range(0, len(image_paths), args.batch_size):
         # Check if memory usage is above limit before processing batch
         if check_memory_usage(threshold=args.memory_limit):
@@ -478,26 +520,35 @@ def main():
             
         batch = image_paths[i:i + args.batch_size]
         
-        # Process batch (uses cached detector internally)
-        batch_results = process_image_batch(batch)
+        # Process batch with real-time progress updates if JSON progress is enabled
+        # This allows per-image progress updates during batch processing
+        batch_results = process_image_batch(
+            batch, 
+            json_progress=args.json_progress,
+            current_count=processed_images,
+            total_count=total_images,
+            start_time=start_time
+        )
         results.update(batch_results)
         
-        # Update progress
+        # Update progress counter
         processed_images += len(batch)
         elapsed = time.time() - start_time
         
-        # Determine reporting frequency based on total images to reduce output volume
-        # For small sets, report more frequently; for large sets, less frequently
-        if total_images <= 100:
-            report_frequency = 5  # Every 5 images for small batches
-        elif total_images <= 1000:
-            report_frequency = 20  # Every 20 images for medium batches
-        else:
-            report_frequency = 50  # Every 50 images for large batches
-            
-        # Print progress at calculated frequency or on completion
-        if processed_images % report_frequency == 0 or processed_images == total_images:
-            print_progress(processed_images, total_images, elapsed, args.json_progress)
+        # For non-JSON progress mode (which won't get real-time updates), 
+        # print batch-level progress updates
+        if not args.json_progress:
+            # Determine reporting frequency based on total images to reduce output volume
+            if total_images <= 100:
+                report_frequency = 5  # Every 5 images for small batches
+            elif total_images <= 1000:
+                report_frequency = 20  # Every 20 images for medium batches
+            else:
+                report_frequency = 50  # Every 50 images for large batches
+                
+            # Print progress at calculated frequency or on completion
+            if processed_images % report_frequency == 0 or processed_images == total_images:
+                print_progress(processed_images, total_images, elapsed, args.json_progress)
             
         # Check if memory usage is above warning threshold
         if check_memory_usage(threshold=args.memory_warning):

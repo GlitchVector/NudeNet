@@ -82,9 +82,57 @@ all_labels = [
 ### Docker
 
 ```bash
-  docker build -f docker-scripts/Dockerfile -t nudenet-gpu .
-  docker run --gpus all nudenet-gpu --test-gpu
+# Build the Docker image with GPU support
+docker build -f docker-scripts/Dockerfile -t nudenet-gpu .
+
+# Test GPU capabilities
+docker run --gpus all nudenet-gpu --test-gpu
 ```
+
+#### Processing Single Images
+
+```bash
+# Process individual images
+docker run --gpus all -v /path/to/images:/images nudenet-gpu /images/image1.jpg /images/image2.jpg
+```
+
+#### Batch Processing
+
+```bash
+# Process a batch of images from a JSON file
+docker run --gpus all -v /path/to/data:/data nudenet-gpu --batch /data/images.json --output /data/results.json
+
+# With real-time progress reporting in JSON format
+docker run --gpus all -v /path/to/data:/data nudenet-gpu --batch /data/images.json --output /data/results.json --json-progress
+
+# For Windows paths (using WSL2), mount each drive letter
+docker run --gpus all -v /c:/mnt/c -v /d:/mnt/d nudenet-gpu --batch /mnt/c/data/images.json --output /mnt/c/data/results.json
+```
+
+The JSON input file should contain a list of image paths:
+```json
+[
+  "/data/image1.jpg",
+  "/data/image2.jpg",
+  "C:\\Users\\username\\Pictures\\image3.jpg"
+]
+```
+
+#### JSON Progress Reporting
+
+When using `--json-progress`, the Docker container outputs real-time progress information in JSON format:
+
+```json
+{"type": "start", "total_images": 670, "batch_size": 16, "input": "/data/images.json", "output": "/data/results.json", "memory_warning_threshold": 85.0, "memory_limit_threshold": 95.0, "memory_percent": 4.4, "memory_used_gb": 0.94, "memory_total_gb": 31.3}
+{"type": "initialized"}
+{"type": "progress", "current": 5, "total": 670, "percent": 0.7}
+{"type": "progress", "current": 10, "total": 670, "percent": 1.5}
+{"type": "progress", "current": 67, "total": 670, "percent": 10.0, "elapsed_seconds": 2.53, "images_per_second": 26.48, "estimated_remaining": 22.77, "memory_percent": 4.6}
+// ... more progress updates ...
+{"type": "complete", "total_images": 670, "processed_successfully": 670, "errors": 0, "total_time_seconds": 25.1, "average_time_per_image": 0.0375, "output_file": "/data/results.json", "memory_percent": 4.6, "memory_used_gb": 1.01, "memory_total_gb": 31.3}
+```
+
+#### Web Server
 
 ```bash
 docker run -it -p8080:8080 ghcr.io/notai-tech/nudenet:latest
