@@ -19,6 +19,7 @@ import argparse
 import psutil
 import logging
 import fcntl
+import threading
 from pathlib import Path, PurePath
 from nudenet import NudeDetector
 
@@ -51,6 +52,14 @@ def force_flush_stdout():
         os.fsync(fd)
     except (AttributeError, OSError, ValueError):
         # Not all environments support these operations
+        pass
+    
+    # Last resort: Try to write directly to /dev/stdout device file
+    try:
+        with open('/dev/stdout', 'w') as stdout_dev:
+            stdout_dev.write('\n')  # Empty line to force flush
+            stdout_dev.flush()
+    except:
         pass
 
 def normalize_path(path):
@@ -198,17 +207,9 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
                     current_image = current_count + i + 1
                     elapsed = time.time() - start_time
                     
-                    # For immediate feedback, print minimal progress update for EVERY image
-                    # This ensures the caller gets continuous updates
-                    simple_progress = {
-                        "type": "progress",
-                        "current": current_image,
-                        "total": total_count,
-                        "percent": round(current_image/total_count*100, 1) if total_count > 0 else 0
-                    }
-                    print(json.dumps(simple_progress), flush=True)
-                    # Force flush using aggressive techniques
-                    force_flush_stdout()
+                    # Update global progress for the background reporter thread
+                    global current_progress
+                    current_progress = current_image
                     
                     # Process individual image
                     detections = detector.detect(normalized_path)
@@ -258,19 +259,9 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
                     current_image = current_count + i + 1
                     elapsed = time.time() - start_time
                     
-                    # For immediate feedback in fallback mode
-                    simple_progress = {
-                        "type": "progress",
-                        "current": current_image,
-                        "total": total_count,
-                        "percent": round(current_image/total_count*100, 1) if total_count > 0 else 0
-                    }
-                    print(json.dumps(simple_progress), flush=True)
-                    force_flush_stdout()
-                    
-                    # Print more detailed progress on milestones
-                    if current_image % 20 == 0 or current_image == total_count:
-                        print_progress(current_image, total_count, elapsed, json_progress)
+                    # Update global progress for the background reporter thread
+                    global current_progress
+                    current_progress = current_image
                 
                 # Process individual image
                 detections = detector.detect(normalized_path)
@@ -352,7 +343,64 @@ def print_progress(current, total, elapsed, json_format=False):
               f"{memory_info['memory_used_gb']}GB / {memory_info['memory_total_gb']}GB")
         force_flush_stdout()
 
+# Global variables for tracking progress
+current_progress = 0
+total_progress = 0
+start_time_global = 0
+exit_flag = False
+is_json_progress = False
+
+def progress_reporter_thread():
+    """A separate thread that reports progress every second regardless of batch processing"""
+    interval = 0.5  # Half second update interval
+    last_progress = 0
+    
+    while not exit_flag:
+        if is_json_progress and current_progress > 0 and current_progress <= total_progress:
+            # Only report if progress has changed
+            if current_progress > last_progress:
+                elapsed = time.time() - start_time_global
+                
+                # Create minimal progress update
+                progress_data = {
+                    "type": "progress",
+                    "current": current_progress,
+                    "total": total_progress,
+                    "percent": round(current_progress/total_progress*100, 1) if total_progress > 0 else 0
+                }
+                
+                # Add detailed metrics every 10% or at completion
+                is_milestone = (current_progress % max(1, min(total_progress // 10, 50)) == 0) or current_progress == total_progress
+                if is_milestone:
+                    # Memory info
+                    vm = psutil.virtual_memory()
+                    
+                    # Add extra info for milestone
+                    progress_data.update({
+                        "elapsed_seconds": round(elapsed, 2),
+                        "images_per_second": round(current_progress/elapsed, 2) if elapsed > 0 else 0,
+                        "estimated_remaining": round((total_progress-current_progress) / (current_progress/elapsed) if current_progress > 0 and elapsed > 0 else 0, 2),
+                        "memory_percent": round(vm.percent, 1)
+                    })
+                
+                # Print directly to device file to bypass all buffering
+                try:
+                    with open('/dev/stdout', 'w') as f:
+                        f.write(json.dumps(progress_data) + '\n')
+                        f.flush()
+                except:
+                    # Fallback to standard methods
+                    print(json.dumps(progress_data), flush=True)
+                    force_flush_stdout()
+                
+                last_progress = current_progress
+        
+        # Sleep briefly
+        time.sleep(interval)
+
 def main():
+    global current_progress, total_progress, start_time_global, exit_flag, is_json_progress
+    
     parser = argparse.ArgumentParser(description='Process images listed in a JSON file with NudeNet')
     parser.add_argument('input_json', help='JSON file containing list of image paths')
     parser.add_argument('--output', '-o', help='Output JSON file for results', required=True)
@@ -541,7 +589,17 @@ def main():
     else:
         detector = get_detector()
     
+    # Setup global progress tracking
     if args.json_progress:
+        is_json_progress = True
+        total_progress = len(image_paths)
+        start_time_global = time.time()
+        
+        # Start the background progress reporter thread
+        reporter = threading.Thread(target=progress_reporter_thread)
+        reporter.daemon = True  # Make the thread exit when main thread exits
+        reporter.start()
+        
         print(json.dumps({"type": "initialized"}), flush=True)
         force_flush_stdout()
     
@@ -583,6 +641,9 @@ def main():
         # Update progress counter
         processed_images += len(batch)
         elapsed = time.time() - start_time
+        
+        # Update global progress for the background reporter thread
+        current_progress = processed_images
         
         # For non-JSON progress mode (which won't get real-time updates), 
         # print batch-level progress updates
@@ -657,7 +718,17 @@ def main():
         print(f"Final memory usage: {memory_info['memory_percent']}% - "
               f"{memory_info['memory_used_gb']}GB / {memory_info['memory_total_gb']}GB")
     
+    # Signal thread to exit
+    exit_flag = True
+    
+    # Allow time for final progress update
+    time.sleep(0.1)
+    
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        exit_flag = True  # Signal thread to terminate
+        sys.exit(1)
