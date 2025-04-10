@@ -208,8 +208,8 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
                     elapsed = time.time() - start_time
                     
                     # Update global progress for the background reporter thread
-                    global current_progress
-                    current_progress = current_image
+                    # Module level variables can be accessed directly
+                    globals()['current_progress'] = current_image
                     
                     # Process individual image
                     detections = detector.detect(normalized_path)
@@ -260,8 +260,8 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
                     elapsed = time.time() - start_time
                     
                     # Update global progress for the background reporter thread
-                    global current_progress
-                    current_progress = current_image
+                    # Module level variables can be accessed directly
+                    globals()['current_progress'] = current_image
                 
                 # Process individual image
                 detections = detector.detect(normalized_path)
@@ -399,7 +399,7 @@ def progress_reporter_thread():
         time.sleep(interval)
 
 def main():
-    global current_progress, total_progress, start_time_global, exit_flag, is_json_progress
+    # We'll access module-level variables directly without 'global' keyword
     
     parser = argparse.ArgumentParser(description='Process images listed in a JSON file with NudeNet')
     parser.add_argument('input_json', help='JSON file containing list of image paths')
@@ -591,9 +591,10 @@ def main():
     
     # Setup global progress tracking
     if args.json_progress:
-        is_json_progress = True
-        total_progress = len(image_paths)
-        start_time_global = time.time()
+        # Update module-level variables
+        globals()['is_json_progress'] = True
+        globals()['total_progress'] = len(image_paths)
+        globals()['start_time_global'] = time.time()
         
         # Start the background progress reporter thread
         reporter = threading.Thread(target=progress_reporter_thread)
@@ -643,7 +644,7 @@ def main():
         elapsed = time.time() - start_time
         
         # Update global progress for the background reporter thread
-        current_progress = processed_images
+        globals()['current_progress'] = processed_images
         
         # For non-JSON progress mode (which won't get real-time updates), 
         # print batch-level progress updates
@@ -719,7 +720,7 @@ def main():
               f"{memory_info['memory_used_gb']}GB / {memory_info['memory_total_gb']}GB")
     
     # Signal thread to exit
-    exit_flag = True
+    globals()['exit_flag'] = True
     
     # Allow time for final progress update
     time.sleep(0.1)
@@ -730,5 +731,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        exit_flag = True  # Signal thread to terminate
+        globals()['exit_flag'] = True  # Signal thread to terminate
         sys.exit(1)
