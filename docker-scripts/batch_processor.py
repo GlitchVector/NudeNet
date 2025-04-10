@@ -173,16 +173,24 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
         
         # For individual image processing with progress reporting
         if json_progress and start_time is not None:
-            # Process images one by one with progress updates
+            # Process images one by one with immediate progress updates
             for i, (original_path, normalized_path) in enumerate(zip(valid_paths, paths_to_process)):
                 try:
                     # Update progress for individual image
                     current_image = current_count + i + 1
                     elapsed = time.time() - start_time
                     
-                    # Print progress report for individual image
-                    if current_image % 5 == 0 or current_image == total_count:
-                        print_progress(current_image, total_count, elapsed, json_progress)
+                    # For immediate feedback, print minimal progress update for EVERY image
+                    # This ensures the caller gets continuous updates
+                    simple_progress = {
+                        "type": "progress",
+                        "current": current_image,
+                        "total": total_count,
+                        "percent": round(current_image/total_count*100, 1) if total_count > 0 else 0
+                    }
+                    print(json.dumps(simple_progress), flush=True)
+                    # Force flush stdout immediately
+                    sys.stdout.flush()
                     
                     # Process individual image
                     detections = detector.detect(normalized_path)
@@ -190,6 +198,10 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
                         'detections': detections,
                         'success': True
                     }
+                    
+                    # Print more detailed progress on milestones
+                    if current_image % 20 == 0 or current_image == total_count:
+                        print_progress(current_image, total_count, elapsed, json_progress)
                 except Exception as e:
                     results[original_path] = {
                         'error': str(e),
@@ -227,7 +239,20 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
                 if json_progress and start_time is not None:
                     current_image = current_count + i + 1
                     elapsed = time.time() - start_time
-                    print_progress(current_image, total_count, elapsed, json_progress)
+                    
+                    # For immediate feedback in fallback mode
+                    simple_progress = {
+                        "type": "progress",
+                        "current": current_image,
+                        "total": total_count,
+                        "percent": round(current_image/total_count*100, 1) if total_count > 0 else 0
+                    }
+                    print(json.dumps(simple_progress), flush=True)
+                    sys.stdout.flush()
+                    
+                    # Print more detailed progress on milestones
+                    if current_image % 20 == 0 or current_image == total_count:
+                        print_progress(current_image, total_count, elapsed, json_progress)
                 
                 # Process individual image
                 detections = detector.detect(normalized_path)
@@ -299,12 +324,15 @@ def print_progress(current, total, elapsed, json_format=False):
             })
         
         print(json.dumps(progress_data), flush=True)
+        # Explicitly flush stdout to ensure immediate output
+        sys.stdout.flush()
     else:
         images_per_sec = current / elapsed if elapsed > 0 else 0
         print(f"Progress: {current}/{total} images processed "
               f"({current/total*100:.1f}%, {images_per_sec:.2f} images/sec)")
         print(f"Memory usage: {memory_info['memory_percent']}% - "
               f"{memory_info['memory_used_gb']}GB / {memory_info['memory_total_gb']}GB")
+        sys.stdout.flush()
 
 def main():
     parser = argparse.ArgumentParser(description='Process images listed in a JSON file with NudeNet')
@@ -479,6 +507,7 @@ def main():
         # Add memory information
         start_info.update(memory_info)
         print(json.dumps(start_info), flush=True)
+        sys.stdout.flush()
     else:
         print(f"Found {len(image_paths)} images to process")
         print(f"Memory usage: {memory_info['memory_percent']}% - "
@@ -496,6 +525,7 @@ def main():
     
     if args.json_progress:
         print(json.dumps({"type": "initialized"}), flush=True)
+        sys.stdout.flush()
     
     # Process images in batches
     results = {}
@@ -514,6 +544,7 @@ def main():
                     "message": error_msg,
                     "memory_percent": psutil.virtual_memory().percent
                 }), flush=True)
+                sys.stdout.flush()
             else:
                 print(f"ERROR: {error_msg}", file=sys.stderr)
             return 1
@@ -559,6 +590,7 @@ def main():
                     "message": warn_msg,
                     "memory_percent": psutil.virtual_memory().percent
                 }), flush=True)
+                sys.stdout.flush()
             else:
                 print(f"WARNING: {warn_msg}", file=sys.stderr)
     
@@ -597,6 +629,7 @@ def main():
         complete_data.update(memory_info)
         
         print(json.dumps(complete_data), flush=True)
+        sys.stdout.flush()
     else:
         print(f"\nSummary:")
         print(f"Total processing time: {total_time:.2f} seconds")

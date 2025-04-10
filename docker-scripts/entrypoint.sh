@@ -185,8 +185,8 @@ if [ "$BATCH_MODE" = true ]; then
     echo "Debug logging enabled"
   fi
   
-  # Run the batch processor
-  python3 /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
+  # Run the batch processor with unbuffered output (-u flag)
+  python3 -u /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
   exit $?
 fi
 
@@ -199,7 +199,7 @@ fi
 # Process each image file provided as argument
 for img_path in "$@"; do
   echo "Processing: $img_path"
-  python3 -c "
+  python3 -u -c "
 from nudenet import NudeDetector
 import sys
 import json
@@ -208,6 +208,7 @@ try:
     detector = NudeDetector()
     results = detector.detect('$img_path')
     print(json.dumps(results, indent=2))
+    sys.stdout.flush()  # Force immediate output
 except Exception as e:
     print(f'Error processing {img_path}: {str(e)}', file=sys.stderr)
 "
