@@ -14,7 +14,8 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
     CUDA_LAUNCH_BLOCKING=1 \
     LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}" \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1
 
 # Set working directory
 WORKDIR /app
@@ -31,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     libxrender1 \
+    coreutils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/local/cuda/lib64/libcudart.so /usr/lib/libcudart.so \

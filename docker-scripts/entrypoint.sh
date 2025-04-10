@@ -185,9 +185,22 @@ if [ "$BATCH_MODE" = true ]; then
     echo "Debug logging enabled"
   fi
   
-  # Run the batch processor with unbuffered output (-u flag)
-  python3 -u /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
-  exit $?
+  # Create a shell script wrapper to ensure real-time output
+  TMP_SCRIPT=$(mktemp)
+  cat > "$TMP_SCRIPT" << 'EOF'
+#!/bin/bash
+# This wrapper forces each line of output to be flushed immediately
+python3 -u "$@" | while IFS= read -r line; do
+  echo "$line"
+done
+EOF
+  chmod +x "$TMP_SCRIPT"
+  
+  # Run the batch processor through the wrapper
+  "$TMP_SCRIPT" /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
+  EXIT_CODE=$?
+  rm -f "$TMP_SCRIPT"
+  exit $EXIT_CODE
 fi
 
 # If no arguments provided, show usage
@@ -196,20 +209,46 @@ if [ $# -eq 0 ]; then
   exit 0
 fi
 
+# Create a shell script wrapper to ensure real-time output for individual mode
+TMP_SCRIPT=$(mktemp)
+cat > "$TMP_SCRIPT" << 'EOF'
+#!/bin/bash
+# This wrapper forces each line of output to be flushed immediately
+python3 -u "$@" | while IFS= read -r line; do
+  echo "$line"
+done
+EOF
+chmod +x "$TMP_SCRIPT"
+
 # Process each image file provided as argument
 for img_path in "$@"; do
   echo "Processing: $img_path"
-  python3 -u -c "
+  "$TMP_SCRIPT" python3 -c "
 from nudenet import NudeDetector
 import sys
 import json
+import os
+import fcntl
+
+# Force stdout to flush immediately
+def force_flush_stdout():
+    sys.stdout.flush()
+    try:
+        fd = sys.stdout.fileno()
+        fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_SYNC)
+        os.fsync(fd)
+    except (AttributeError, OSError, ValueError):
+        pass
 
 try:
     detector = NudeDetector()
     results = detector.detect('$img_path')
     print(json.dumps(results, indent=2))
-    sys.stdout.flush()  # Force immediate output
+    force_flush_stdout()
 except Exception as e:
     print(f'Error processing {img_path}: {str(e)}', file=sys.stderr)
 "
 done
+
+# Clean up
+rm -f "$TMP_SCRIPT"

@@ -18,6 +18,7 @@ import time
 import argparse
 import psutil
 import logging
+import fcntl
 from pathlib import Path, PurePath
 from nudenet import NudeDetector
 
@@ -34,6 +35,23 @@ logger = logging.getLogger("nudenet-batch")
 
 # Default to a higher log level to reduce verbosity, will be adjusted if --debug is used
 logger.setLevel(logging.WARNING)
+
+def force_flush_stdout():
+    """
+    Force stdout to flush immediately using low-level operations.
+    This is more reliable than Python's flush() in containerized environments.
+    """
+    # Try multiple flush methods to ensure output gets through
+    sys.stdout.flush()  # Python's built-in flush
+    
+    try:
+        # Unix-specific: Use fsync to force OS to write data
+        fd = sys.stdout.fileno()
+        fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_SYNC)
+        os.fsync(fd)
+    except (AttributeError, OSError, ValueError):
+        # Not all environments support these operations
+        pass
 
 def normalize_path(path):
     """
@@ -189,8 +207,8 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
                         "percent": round(current_image/total_count*100, 1) if total_count > 0 else 0
                     }
                     print(json.dumps(simple_progress), flush=True)
-                    # Force flush stdout immediately
-                    sys.stdout.flush()
+                    # Force flush using aggressive techniques
+                    force_flush_stdout()
                     
                     # Process individual image
                     detections = detector.detect(normalized_path)
@@ -248,7 +266,7 @@ def process_image_batch(image_paths, json_progress=False, current_count=0, total
                         "percent": round(current_image/total_count*100, 1) if total_count > 0 else 0
                     }
                     print(json.dumps(simple_progress), flush=True)
-                    sys.stdout.flush()
+                    force_flush_stdout()
                     
                     # Print more detailed progress on milestones
                     if current_image % 20 == 0 or current_image == total_count:
@@ -324,15 +342,15 @@ def print_progress(current, total, elapsed, json_format=False):
             })
         
         print(json.dumps(progress_data), flush=True)
-        # Explicitly flush stdout to ensure immediate output
-        sys.stdout.flush()
+        # Use aggressive flush methods
+        force_flush_stdout()
     else:
         images_per_sec = current / elapsed if elapsed > 0 else 0
         print(f"Progress: {current}/{total} images processed "
               f"({current/total*100:.1f}%, {images_per_sec:.2f} images/sec)")
         print(f"Memory usage: {memory_info['memory_percent']}% - "
               f"{memory_info['memory_used_gb']}GB / {memory_info['memory_total_gb']}GB")
-        sys.stdout.flush()
+        force_flush_stdout()
 
 def main():
     parser = argparse.ArgumentParser(description='Process images listed in a JSON file with NudeNet')
@@ -507,7 +525,7 @@ def main():
         # Add memory information
         start_info.update(memory_info)
         print(json.dumps(start_info), flush=True)
-        sys.stdout.flush()
+        force_flush_stdout()
     else:
         print(f"Found {len(image_paths)} images to process")
         print(f"Memory usage: {memory_info['memory_percent']}% - "
@@ -525,7 +543,7 @@ def main():
     
     if args.json_progress:
         print(json.dumps({"type": "initialized"}), flush=True)
-        sys.stdout.flush()
+        force_flush_stdout()
     
     # Process images in batches
     results = {}
@@ -544,7 +562,7 @@ def main():
                     "message": error_msg,
                     "memory_percent": psutil.virtual_memory().percent
                 }), flush=True)
-                sys.stdout.flush()
+                force_flush_stdout()
             else:
                 print(f"ERROR: {error_msg}", file=sys.stderr)
             return 1
@@ -590,7 +608,7 @@ def main():
                     "message": warn_msg,
                     "memory_percent": psutil.virtual_memory().percent
                 }), flush=True)
-                sys.stdout.flush()
+                force_flush_stdout()
             else:
                 print(f"WARNING: {warn_msg}", file=sys.stderr)
     
@@ -629,7 +647,7 @@ def main():
         complete_data.update(memory_info)
         
         print(json.dumps(complete_data), flush=True)
-        sys.stdout.flush()
+        force_flush_stdout()
     else:
         print(f"\nSummary:")
         print(f"Total processing time: {total_time:.2f} seconds")
