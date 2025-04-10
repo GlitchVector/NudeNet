@@ -48,8 +48,14 @@ def force_flush_stdout():
     try:
         # Unix-specific: Use fsync to force OS to write data
         fd = sys.stdout.fileno()
+        # Set non-blocking mode
+        fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+        # Set sync mode
         fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_SYNC)
         os.fsync(fd)
+        
+        # Short delay to allow OS buffer to clear
+        time.sleep(0.01)
     except (AttributeError, OSError, ValueError):
         # Not all environments support these operations
         pass
@@ -59,8 +65,14 @@ def force_flush_stdout():
         with open('/dev/stdout', 'w') as stdout_dev:
             stdout_dev.write('\n')  # Empty line to force flush
             stdout_dev.flush()
+            # Add a second newline for good measure
+            stdout_dev.write('\n')
+            stdout_dev.flush()
     except:
         pass
+        
+    # Add a small sleep to let buffers clear
+    time.sleep(0.01)
 
 def normalize_path(path):
     """
@@ -332,9 +344,20 @@ def print_progress(current, total, elapsed, json_format=False):
                 "memory_percent": memory_info["memory_percent"]
             })
         
-        print(json.dumps(progress_data), flush=True)
-        # Use aggressive flush methods
-        force_flush_stdout()
+        # Use direct writes to ensure immediate output with an extra newline
+        try:
+            with open('/dev/stdout', 'w') as f:
+                f.write(json.dumps(progress_data) + '\n')
+                f.flush()
+                # Add explicit newline for better buffering control
+                f.write('\n')
+                f.flush()
+        except:
+            # Fallback to standard methods
+            print(json.dumps(progress_data), flush=True)
+            print()  # Add empty line to force buffer flush
+            # Use aggressive flush methods
+            force_flush_stdout()
     else:
         images_per_sec = current / elapsed if elapsed > 0 else 0
         print(f"Progress: {current}/{total} images processed "
@@ -388,9 +411,13 @@ def progress_reporter_thread():
                     with open('/dev/stdout', 'w') as f:
                         f.write(json.dumps(progress_data) + '\n')
                         f.flush()
+                        # Add explicit newline for better buffering control
+                        f.write('\n')
+                        f.flush()
                 except:
                     # Fallback to standard methods
                     print(json.dumps(progress_data), flush=True)
+                    print()  # Add empty line to force buffer flush
                     force_flush_stdout()
                 
                 last_progress = current_progress
@@ -572,8 +599,16 @@ def main():
         }
         # Add memory information
         start_info.update(memory_info)
-        print(json.dumps(start_info), flush=True)
-        force_flush_stdout()
+        
+        # Use direct writes to ensure immediate output
+        try:
+            with open('/dev/stdout', 'w') as f:
+                f.write(json.dumps(start_info) + '\n\n')  # Double newline for better flushing
+                f.flush()
+        except:
+            print(json.dumps(start_info), flush=True)
+            print()  # Add empty line
+            force_flush_stdout()
     else:
         print(f"Found {len(image_paths)} images to process")
         print(f"Memory usage: {memory_info['memory_percent']}% - "
@@ -601,8 +636,15 @@ def main():
         reporter.daemon = True  # Make the thread exit when main thread exits
         reporter.start()
         
-        print(json.dumps({"type": "initialized"}), flush=True)
-        force_flush_stdout()
+        # Use direct writes to ensure immediate output
+        try:
+            with open('/dev/stdout', 'w') as f:
+                f.write(json.dumps({"type": "initialized"}) + '\n\n')  # Double newline for better flushing
+                f.flush()
+        except:
+            print(json.dumps({"type": "initialized"}), flush=True)
+            print()  # Add empty line
+            force_flush_stdout()
     
     # Process images in batches
     results = {}
@@ -708,8 +750,15 @@ def main():
         # Add memory information
         complete_data.update(memory_info)
         
-        print(json.dumps(complete_data), flush=True)
-        force_flush_stdout()
+        # Use direct writes to ensure immediate output
+        try:
+            with open('/dev/stdout', 'w') as f:
+                f.write(json.dumps(complete_data) + '\n\n')  # Double newline for better flushing
+                f.flush()
+        except:
+            print(json.dumps(complete_data), flush=True)
+            print()  # Add empty line
+            force_flush_stdout()
     else:
         print(f"\nSummary:")
         print(f"Total processing time: {total_time:.2f} seconds")

@@ -190,14 +190,18 @@ if [ "$BATCH_MODE" = true ]; then
   cat > "$TMP_SCRIPT" << 'EOF'
 #!/bin/bash
 # This wrapper forces each line of output to be flushed immediately
-python3 -u "$@" | while IFS= read -r line; do
+# -u flag makes Python unbuffered
+# Use stdbuf to disable buffering at OS level
+stdbuf -i0 -o0 -e0 python3 -u "$@" | while IFS= read -r line; do
   echo "$line"
+  # Force flush after each line
+  sleep 0.01
 done
 EOF
   chmod +x "$TMP_SCRIPT"
   
-  # Run the batch processor through the wrapper
-  "$TMP_SCRIPT" /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
+  # Run the batch processor through the wrapper with buffering disabled
+  stdbuf -i0 -o0 -e0 "$TMP_SCRIPT" /app/batch_processor.py "$INPUT_JSON" --output "$OUTPUT_FILE" $ARGS
   EXIT_CODE=$?
   rm -f "$TMP_SCRIPT"
   exit $EXIT_CODE
