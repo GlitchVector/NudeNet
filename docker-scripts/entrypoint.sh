@@ -17,7 +17,7 @@ show_usage() {
   echo "  --json-progress              Output progress information in JSON format"
   echo "  --memory-warning <percent>   Memory usage threshold for warnings (default: 85.0)"
   echo "  --memory-limit <percent>     Memory usage threshold to abort processing (default: 95.0)"
-  echo "  --debug                      Enable verbose debug logging"
+  echo "  --debug                      Enable verbose debug logging (WARNING: may cause buffer overflow with large batches)"
   echo ""
   echo "Important: When processing images with Windows paths (e.g., D:\\path\\to\\images), you MUST mount the drives:"
   echo "  * For Windows paths (WSL2):  -v /d:/mnt/d -v /c:/mnt/c (mount each drive letter you need)"

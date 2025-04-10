@@ -3,6 +3,12 @@
 NudeNet Batch Image Processor for JSON lists
 --------------------------------------------
 Process images listed in a JSON file with paths from various locations
+
+This script is optimized for performance and memory efficiency:
+- Uses stderr for logging to prevent buffer overflow issues
+- Minimizes log verbosity in non-debug mode
+- Adapts progress reporting frequency based on batch size
+- Implements batched processing with memory monitoring
 """
 
 import os
@@ -16,14 +22,18 @@ from pathlib import Path, PurePath
 from nudenet import NudeDetector
 
 # Configure logging
+# Use stderr for regular logging so it doesn't interfere with JSON progress output
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stderr)
     ]
 )
 logger = logging.getLogger("nudenet-batch")
+
+# Default to a higher log level to reduce verbosity, will be adjusted if --debug is used
+logger.setLevel(logging.WARNING)
 
 def normalize_path(path):
     """
@@ -96,24 +106,28 @@ def check_file_exists(path):
     """Check if a file exists, with helpful logging for debugging path issues"""
     exists = os.path.exists(path)
     if exists:
+        # Only log detailed file info in debug mode
         logger.debug(f"File exists: {path}")
         try:
-            size = os.path.getsize(path)
-            logger.debug(f"File size: {size} bytes")
+            if logger.level <= logging.DEBUG:
+                size = os.path.getsize(path)
+                logger.debug(f"File size: {size} bytes")
         except Exception as e:
             logger.warning(f"Error getting file size: {str(e)}")
     else:
         parent_dir = os.path.dirname(path)
         if not os.path.exists(parent_dir):
             logger.warning(f"Parent directory doesn't exist: {parent_dir}")
-            # Try to list mountpoints for debugging
-            try:
-                mounts = []
-                if os.path.exists('/mnt'):
-                    mounts = os.listdir('/mnt')
-                logger.warning(f"Available mounts in /mnt: {mounts}")
-            except Exception as e:
-                logger.warning(f"Error checking mounts: {str(e)}")
+            # Only check mounts in debug mode to reduce verbosity
+            if logger.level <= logging.DEBUG:
+                # Try to list mountpoints for debugging
+                try:
+                    mounts = []
+                    if os.path.exists('/mnt'):
+                        mounts = os.listdir('/mnt')
+                    logger.debug(f"Available mounts in /mnt: {mounts}")
+                except Exception as e:
+                    logger.warning(f"Error checking mounts: {str(e)}")
         logger.warning(f"File not found: {path}")
     return exists
 
@@ -228,13 +242,20 @@ def print_progress(current, total, elapsed, json_format=False):
             "type": "progress",
             "current": current,
             "total": total,
-            "percent": round(current/total*100, 1) if total > 0 else 0,
-            "elapsed_seconds": round(elapsed, 2),
-            "images_per_second": round(current/elapsed, 2) if elapsed > 0 else 0,
-            "estimated_remaining": round((total-current) / (current/elapsed) if current > 0 and elapsed > 0 else 0, 2)
+            "percent": round(current/total*100, 1) if total > 0 else 0
         }
-        # Add memory information
-        progress_data.update(memory_info)
+        
+        # Only include detailed metrics on milestone updates to reduce verbosity
+        is_milestone = (current % max(1, min(total // 10, 20)) == 0) or current == total
+        if is_milestone:
+            # Add more detailed information on milestone updates
+            progress_data.update({
+                "elapsed_seconds": round(elapsed, 2),
+                "images_per_second": round(current/elapsed, 2) if elapsed > 0 else 0,
+                "estimated_remaining": round((total-current) / (current/elapsed) if current > 0 and elapsed > 0 else 0, 2),
+                "memory_percent": memory_info["memory_percent"]
+            })
+        
         print(json.dumps(progress_data), flush=True)
     else:
         images_per_sec = current / elapsed if elapsed > 0 else 0
@@ -265,29 +286,37 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
         logger.debug("Debug logging enabled")
-    
-    # Log environment information
-    logger.info(f"Starting NudeNet batch processor")
-    logger.info(f"Python version: {sys.version}")
-    logger.info(f"Running as user: {os.getuid()}")
-    logger.info(f"Current working directory: {os.getcwd()}")
-    
-    # Log mount points for debugging
-    try:
-        if os.path.exists('/mnt'):
-            mounts = os.listdir('/mnt')
-            logger.info(f"Available mounts in /mnt: {mounts}")
-    except Exception as e:
-        logger.warning(f"Error checking mounts: {str(e)}")
-    
-    # Log command line arguments
-    logger.info(f"Input JSON: {args.input_json}")
-    logger.info(f"Output path: {args.output}")
-    logger.info(f"Batch size: {args.batch_size}")
-    if args.model:
-        logger.info(f"Model path: {args.model}")
     else:
-        logger.info("Using default model")
+        # In non-debug mode, keep logging minimal
+        logger.setLevel(logging.WARNING)
+    
+    # Log environment information only in debug mode
+    if logger.level <= logging.DEBUG:
+        logger.debug(f"Starting NudeNet batch processor")
+        logger.debug(f"Python version: {sys.version}")
+        logger.debug(f"Running as user: {os.getuid()}")
+        logger.debug(f"Current working directory: {os.getcwd()}")
+        
+        # Log mount points for debugging
+        try:
+            if os.path.exists('/mnt'):
+                mounts = os.listdir('/mnt')
+                logger.debug(f"Available mounts in /mnt: {mounts}")
+        except Exception as e:
+            logger.warning(f"Error checking mounts: {str(e)}")
+    else:
+        # Just log basic info in non-debug mode
+        logger.info(f"Starting NudeNet batch processor")
+    
+    # Log command line arguments at the appropriate level
+    if logger.level <= logging.DEBUG:
+        logger.debug(f"Input JSON: {args.input_json}")
+        logger.debug(f"Output path: {args.output}")
+        logger.debug(f"Batch size: {args.batch_size}")
+        if args.model:
+            logger.debug(f"Model path: {args.model}")
+        else:
+            logger.debug("Using default model")
     
     # Check input file exists
     input_json_path = Path(args.input_json)
@@ -369,21 +398,22 @@ def main():
             print(error_msg)
         return 1
         
-    # Log some sample paths for debugging
+    # Log summary info at INFO level
     logger.info(f"Found {len(image_paths)} image paths in JSON")
-    if len(image_paths) > 0:
-        logger.info(f"First few paths:")
-        for i, path in enumerate(image_paths[:5]):
-            logger.info(f"  Path {i+1}: {path}")
+    
+    # Log detailed sample paths only in debug mode
+    if logger.level <= logging.DEBUG and len(image_paths) > 0:
+        logger.debug(f"First few paths:")
+        for i, path in enumerate(image_paths[:min(5, len(image_paths))]):
+            logger.debug(f"  Path {i+1}: {path}")
         
-        # Try to normalize a sample path
-        if len(image_paths) > 0:
-            sample_path = image_paths[0]
-            normalized = normalize_windows_path(sample_path)
-            logger.info(f"Sample path normalization:")
-            logger.info(f"  Original: {sample_path}")
-            logger.info(f"  Normalized: {normalized}")
-            logger.info(f"  Exists: {os.path.exists(normalized)}")
+        # Try to normalize a sample path only in debug mode
+        sample_path = image_paths[0]
+        normalized = normalize_windows_path(sample_path)
+        logger.debug(f"Sample path normalization:")
+        logger.debug(f"  Original: {sample_path}")
+        logger.debug(f"  Normalized: {normalized}")
+        logger.debug(f"  Exists: {os.path.exists(normalized)}")
     
     # Get memory information
     vm = psutil.virtual_memory()
@@ -456,8 +486,17 @@ def main():
         processed_images += len(batch)
         elapsed = time.time() - start_time
         
-        # Print progress in appropriate format
-        if processed_images % 5 == 0 or processed_images == total_images:  # Report every 5 images
+        # Determine reporting frequency based on total images to reduce output volume
+        # For small sets, report more frequently; for large sets, less frequently
+        if total_images <= 100:
+            report_frequency = 5  # Every 5 images for small batches
+        elif total_images <= 1000:
+            report_frequency = 20  # Every 20 images for medium batches
+        else:
+            report_frequency = 50  # Every 50 images for large batches
+            
+        # Print progress at calculated frequency or on completion
+        if processed_images % report_frequency == 0 or processed_images == total_images:
             print_progress(processed_images, total_images, elapsed, args.json_progress)
             
         # Check if memory usage is above warning threshold
